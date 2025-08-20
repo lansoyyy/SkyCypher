@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:skycypher/utils/colors.dart' as app_colors;
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -6,7 +7,265 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: const Placeholder(),
+      backgroundColor: app_colors.primary,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            // Watermark background logo
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Align(
+                  alignment: Alignment.center,
+                  child: Opacity(
+                    opacity: 0.04,
+                    child: Image.asset(
+                      'assets/images/logo.png',
+                      width: 440,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // Foreground content
+            Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Center(
+                    child: Text(
+                      "YOU'RE CLEARED FOR ACTION,",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontFamily: 'Bold',
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  // Profile card
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      gradient: LinearGradient(
+                        colors: [
+                          _lighten(app_colors.secondary, .10),
+                          _darken(app_colors.secondary, .06),
+                        ],
+                      ),
+                      border: Border.all(
+                          color: Colors.white.withOpacity(0.18), width: 1),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.25),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              colors: [
+                                _lighten(app_colors.secondary, .25),
+                                _darken(app_colors.secondary, .15),
+                              ],
+                            ),
+                          ),
+                          child: CircleAvatar(
+                            radius: 22,
+                            backgroundColor: Colors.white,
+                            child: Icon(
+                              Icons.person,
+                              color: app_colors.primary,
+                              size: 28,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'Engr. Tricia Bermil',
+                                style: TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 20,
+                                  fontFamily: 'Bold',
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Welcome back',
+                                style: TextStyle(
+                                  color: Colors.black.withOpacity(0.7),
+                                  fontSize: 12,
+                                  fontFamily: 'Medium',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 100),
+
+                  // Feature grid (4 cards)
+                  GridView.count(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 1,
+                    physics: const NeverScrollableScrollPhysics(),
+                    shrinkWrap: true,
+                    children: [
+                      _FeatureButton(
+                        icon: Icons.mic,
+                        label: 'Voice Commands',
+                        onTap: () =>
+                            _tap(context, 'Voice-Controlled Inspection'),
+                      ),
+                      _FeatureButton(
+                        icon: Icons.build,
+                        label: 'Maintenance Logs',
+                        onTap: () => _tap(context, 'Maintenance Log System'),
+                      ),
+                      _FeatureButton(
+                        icon: Icons.flight,
+                        label: 'Aircraft Status',
+                        onTap: () => _tap(context, 'Aircraft Status Overview'),
+                      ),
+                      _FeatureButton(
+                        icon: Icons.analytics,
+                        label: 'Reports',
+                        onTap: () => _tap(context, 'Reports'),
+                      ),
+                    ],
+                  ),
+
+                  Spacer(),
+
+                  Center(
+                    child: Text(
+                      'SkyCyphers Inc.',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.85),
+                        fontFamily: 'Regular',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
+
+  void _tap(BuildContext context, String feature) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$feature coming soon...'),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: app_colors.secondary,
+      ),
+    );
+  }
+}
+
+class _FeatureButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _FeatureButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 100,
+      child: Card(
+        elevation: 6,
+        shadowColor: Colors.black.withOpacity(0.25),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  _lighten(app_colors.secondary, .08),
+                  _darken(app_colors.secondary, .06),
+                ],
+              ),
+              border:
+                  Border.all(color: Colors.white.withOpacity(0.18), width: 1),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Left circular icon badge
+                CircleAvatar(
+                  backgroundColor: Colors.black.withOpacity(0.12),
+                  radius: 40,
+                  child: Icon(icon, size: 48, color: Colors.black87),
+                ),
+                SizedBox(height: 16),
+                // Centered label
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 18,
+                        height: 1.15,
+                        fontFamily: 'Bold',
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Helpers to lighten/darken colors for subtle gradients
+Color _lighten(Color color, [double amount = .1]) {
+  final hsl = HSLColor.fromColor(color);
+  final hslLight = hsl.withLightness((hsl.lightness + amount).clamp(0.0, 1.0));
+  return hslLight.toColor();
+}
+
+Color _darken(Color color, [double amount = .1]) {
+  final hsl = HSLColor.fromColor(color);
+  final hslDark = hsl.withLightness((hsl.lightness - amount).clamp(0.0, 1.0));
+  return hslDark.toColor();
 }
