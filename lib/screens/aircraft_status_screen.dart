@@ -35,53 +35,98 @@ class _AircraftStatusScreenState extends State<AircraftStatusScreen> {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Stack(
             children: [
-              Row(
-                children: [
-                  _CircleButton(
-                    icon: Icons.arrow_back,
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
-                  const SizedBox(width: 12),
-                  const Text(
-                    'Aircraft Status',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontFamily: 'Bold',
+              // Background gradient (within padded area)
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        app_colors.primary,
+                        Color.lerp(
+                            app_colors.primary, app_colors.secondary, 0.10)!,
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
+              // Watermark logo
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Align(
+                    alignment: Alignment.center,
+                    child: Opacity(
+                      opacity: 0.12,
+                      child: Image.asset('assets/images/logo.png',
+                          width: 440, fit: BoxFit.contain),
+                    ),
+                  ),
+                ),
+              ),
+              // Content
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      AircraftStatusCard(
-                        title: 'Cessna 152',
-                        aircraftImageAsset: 'assets/images/Cessna 152.png',
-                        rpController: _rp152Controller,
-                        statusValue: _status152,
-                        onStatusChanged: (v) => setState(() => _status152 = v),
-                        statusOptions: _statusOptions,
-                        availableNote: null,
+                      _CircleButton(
+                        icon: Icons.arrow_back,
+                        onTap: () => Navigator.of(context).pop(),
                       ),
-                      const SizedBox(height: 16),
-                      AircraftStatusCard(
-                        title: 'Cessna 150 (NOT AVAILABLE)',
-                        aircraftImageAsset: 'assets/images/Cessna 150.png',
-                        rpController: _rp150Controller,
-                        statusValue: _status150,
-                        onStatusChanged: (v) => setState(() => _status150 = v),
-                        statusOptions: _statusOptions,
-                        availableNote: 'Currently not available',
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Aircraft Status',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontFamily: 'Bold',
+                        ),
                       ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Update aircraft RP and status.',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.85),
+                      fontFamily: 'Medium',
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          AircraftStatusCard(
+                            title: 'Cessna 152',
+                            aircraftImageAsset: 'assets/images/Cessna 152.png',
+                            rpController: _rp152Controller,
+                            statusValue: _status152,
+                            onStatusChanged: (v) =>
+                                setState(() => _status152 = v),
+                            statusOptions: _statusOptions,
+                            availableNote: null,
+                          ),
+                          const SizedBox(height: 16),
+                          AircraftStatusCard(
+                            title: 'Cessna 150 (NOT AVAILABLE)',
+                            aircraftImageAsset: 'assets/images/Cessna 150.png',
+                            rpController: _rp150Controller,
+                            statusValue: _status150,
+                            onStatusChanged: (v) =>
+                                setState(() => _status150 = v),
+                            statusOptions: _statusOptions,
+                            availableNote: 'Currently not available',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -127,15 +172,52 @@ class AircraftStatusCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontFamily: 'Bold',
-                  fontSize: 20,
-                  color: Colors.black,
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontFamily: 'Bold',
+                      fontSize: 20,
+                      color: Colors.black,
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: availableNote == null
+                        ? Colors.green.shade100
+                        : Colors.red.shade100,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.black.withOpacity(0.2)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        availableNote == null
+                            ? Icons.check_circle
+                            : Icons.error_outline,
+                        size: 14,
+                        color: Colors.black87,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        availableNote == null ? 'Available' : 'Not Available',
+                        style: const TextStyle(
+                          fontFamily: 'Bold',
+                          fontSize: 12,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Row(
@@ -154,22 +236,19 @@ class AircraftStatusCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
                 Expanded(
-                  flex: 7,
+                  flex: 8,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       TextField(
                         controller: rpController,
                         decoration: InputDecoration(
-                          hintText: '"ENTER AIRCRAFT RP NUMBER"',
-                          hintStyle: const TextStyle(
-                            fontFamily: 'Bold',
-                            color: Colors.black,
-                          ),
+                          hintText: 'Enter Aircraft RP Number',
+                          prefixIcon:
+                              const Icon(Icons.tag, color: Colors.black87),
                           filled: true,
-                          fillColor: const Color(0xFFB7C4FF),
+                          fillColor: Colors.white,
                           contentPadding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 12),
                           border: OutlineInputBorder(
@@ -178,7 +257,7 @@ class AircraftStatusCard extends StatelessWidget {
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                             borderSide: BorderSide(
-                                color: Colors.black.withOpacity(0.25)),
+                                color: Colors.black.withOpacity(0.2)),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
@@ -186,42 +265,46 @@ class AircraftStatusCard extends StatelessWidget {
                                 color: app_colors.secondary, width: 1.5),
                           ),
                         ),
-                        style: const TextStyle(fontFamily: 'Bold'),
+                        style: const TextStyle(fontFamily: 'Regular'),
                       ),
                       const SizedBox(height: 8),
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFB7C4FF),
-                          borderRadius: BorderRadius.circular(10),
-                          border:
-                              Border.all(color: Colors.black.withOpacity(0.25)),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: DropdownButtonFormField<String>(
-                            value: statusValue,
-                            decoration: const InputDecoration(
-                              border: InputBorder.none,
-                              contentPadding: EdgeInsets.zero,
-                            ),
-                            hint: const Text(
-                              'Select Status',
-                              style: TextStyle(fontFamily: 'Bold'),
-                            ),
-                            icon: const Icon(Icons.arrow_drop_down),
-                            items: [
-                              for (final opt in statusOptions)
-                                DropdownMenuItem(
-                                  value: opt,
-                                  child: Text(
-                                    opt,
-                                    style: const TextStyle(fontFamily: 'Bold'),
-                                  ),
-                                )
-                            ],
-                            onChanged: onStatusChanged,
+                      DropdownButtonFormField<String>(
+                        value: statusValue,
+                        decoration: InputDecoration(
+                          hintText: 'Select Status',
+                          prefixIcon: const Icon(Icons.check_circle_outline,
+                              color: Colors.black87),
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(
+                                color: Colors.black.withOpacity(0.2)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(
+                                color: app_colors.secondary, width: 1.5),
                           ),
                         ),
+                        icon: const Icon(Icons.arrow_drop_down),
+                        items: [
+                          for (final opt in statusOptions)
+                            DropdownMenuItem(
+                              value: opt,
+                              child: Text(
+                                opt,
+                                style: const TextStyle(
+                                    fontFamily: 'Bold', fontSize: 12),
+                              ),
+                            )
+                        ],
+                        onChanged: onStatusChanged,
                       ),
                       if (availableNote != null) ...[
                         const SizedBox(height: 6),

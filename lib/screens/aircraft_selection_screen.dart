@@ -48,6 +48,22 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
                 ),
               ),
             ),
+            // Subtle watermark logo
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Align(
+                  alignment: Alignment.center,
+                  child: Opacity(
+                    opacity: 0.04,
+                    child: Image.asset(
+                      'assets/images/logo.png',
+                      width: 500,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ),
+            ),
             // Content
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
@@ -94,7 +110,17 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
                       ),
                     ),
                   ),
-
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Text(
+                      'Select a model and enter RP to begin.',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.85),
+                        fontSize: 12,
+                        fontFamily: 'Medium',
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 20),
 
                   // Dropdown like selector
@@ -185,9 +211,28 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
           ),
           content: TextField(
             controller: _rpController,
-            decoration: const InputDecoration(
+            style: const TextStyle(fontFamily: 'Regular'),
+            decoration: InputDecoration(
               hintText: 'e.g. RP-C152',
-              border: OutlineInputBorder(),
+              hintStyle:
+                  const TextStyle(color: Colors.black54, fontFamily: 'Regular'),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.black.withOpacity(0.2)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.black.withOpacity(0.2)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.black.withOpacity(0.45)),
+              ),
+              prefixIcon: const Icon(Icons.tag, color: Colors.black87),
             ),
           ),
           actions: [
@@ -196,6 +241,10 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
               child: const Text('CANCEL'),
             ),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _lighten(app_colors.secondary, .12),
+                foregroundColor: Colors.black,
+              ),
               onPressed: () {
                 setState(() {
                   _selectedModel = model;
@@ -312,18 +361,61 @@ class _AircraftCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 12),
-            // Title + RP button
+            // Title + badge + RP button
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontFamily: 'Bold',
-                      fontSize: 18,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: const TextStyle(
+                            fontFamily: 'Bold',
+                            fontSize: 18,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: available
+                              ? Colors.green.withOpacity(0.15)
+                              : Colors.red.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                              color: (available ? Colors.green : Colors.red)
+                                  .withOpacity(0.6)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              available ? Icons.check_circle : Icons.block,
+                              size: 14,
+                              color: available ? Colors.green : Colors.red,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              available ? 'Available' : 'Not Available',
+                              style: TextStyle(
+                                color: available
+                                    ? Colors.green.shade800
+                                    : Colors.red.shade800,
+                                fontSize: 11,
+                                fontFamily: 'Medium',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 6),
                   Align(
@@ -343,7 +435,7 @@ class _AircraftCard extends StatelessWidget {
                       ),
                       onPressed: available ? onEnterRP : null,
                       child: const Text(
-                        '"ENTER AIRCRAFT\nRP NUMBER"',
+                        'Enter Aircraft RP Number',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                             fontFamily: 'Medium', fontSize: 12, height: 1.1),

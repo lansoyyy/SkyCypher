@@ -21,9 +21,21 @@ class MaintenanceLogScreen extends StatelessWidget {
                     end: Alignment.bottomCenter,
                     colors: [
                       app_colors.primary,
-                      Color.lerp(
-                          app_colors.primary, app_colors.secondary, 0.10)!,
+                      Color.lerp(app_colors.primary, app_colors.primary, 0.10)!,
                     ],
+                  ),
+                ),
+              ),
+            ),
+            // Watermark logo
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Align(
+                  alignment: Alignment.center,
+                  child: Opacity(
+                    opacity: 0.15,
+                    child: Image.asset('assets/images/logo.png',
+                        width: 440, fit: BoxFit.contain),
                   ),
                 ),
               ),
@@ -59,7 +71,16 @@ class MaintenanceLogScreen extends StatelessWidget {
                     ],
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tap a log to view details or add a new one.',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.85),
+                      fontFamily: 'Medium',
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
 
                   // First info card
                   _InfoCard(
@@ -132,15 +153,29 @@ class MaintenanceLogScreen extends StatelessWidget {
                     child: SingleChildScrollView(
                       child: Column(
                         children: const [
-                          _LabeledField(label: 'Component'),
-                          _LabeledField(label: 'Date'),
-                          _LabeledField(label: 'Location'),
-                          _LabeledField(label: 'Inspected By'),
-                          _LabeledField(label: 'Aircraft'),
                           _LabeledField(
-                              label: 'Detailed Inspection', maxLines: 3),
-                          _LabeledField(label: 'Reported Issue', maxLines: 3),
-                          _LabeledField(label: 'Action Taken', maxLines: 3),
+                              label: 'Component', icon: Icons.build_outlined),
+                          _LabeledField(
+                              label: 'Date', icon: Icons.event_outlined),
+                          _LabeledField(
+                              label: 'Location', icon: Icons.place_outlined),
+                          _LabeledField(
+                              label: 'Inspected By',
+                              icon: Icons.person_outline),
+                          _LabeledField(
+                              label: 'Aircraft', icon: Icons.flight_outlined),
+                          _LabeledField(
+                              label: 'Detailed Inspection',
+                              maxLines: 3,
+                              icon: Icons.description_outlined),
+                          _LabeledField(
+                              label: 'Reported Issue',
+                              maxLines: 3,
+                              icon: Icons.report_problem_outlined),
+                          _LabeledField(
+                              label: 'Action Taken',
+                              maxLines: 3,
+                              icon: Icons.task_alt_outlined),
                         ],
                       ),
                     ),
@@ -307,10 +342,22 @@ class _InfoCard extends StatelessWidget {
                         ),
                       );
                     },
-                child: Icon(
-                  Icons.send_rounded,
-                  color: Colors.black.withOpacity(0.85),
-                  size: 36,
+                customBorder: const CircleBorder(),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [
+                        _lighten(app_colors.secondary, .25),
+                        _darken(app_colors.secondary, .15),
+                      ],
+                    ),
+                    border: Border.all(
+                        color: Colors.white.withOpacity(0.18), width: 1),
+                  ),
+                  child: const Icon(Icons.send_rounded,
+                      color: Colors.black, size: 20),
                 ),
               ),
             ],
@@ -345,7 +392,8 @@ class _EmptyCard extends StatelessWidget {
 class _LabeledField extends StatelessWidget {
   final String label;
   final int maxLines;
-  const _LabeledField({super.key, required this.label, this.maxLines = 1});
+  final IconData? icon;
+  const _LabeledField({required this.label, this.maxLines = 1, this.icon});
 
   @override
   Widget build(BuildContext context) {
@@ -368,6 +416,8 @@ class _LabeledField extends StatelessWidget {
             style: const TextStyle(fontFamily: 'Regular', fontSize: 14),
             decoration: InputDecoration(
               hintText: 'Enter $label',
+              prefixIcon:
+                  icon != null ? Icon(icon, color: Colors.black87) : null,
               filled: true,
               fillColor: Colors.white,
               contentPadding:

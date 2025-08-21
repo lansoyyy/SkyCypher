@@ -48,8 +48,18 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ),
                   ),
-
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 6),
+                  Center(
+                    child: Text(
+                      'Tap a module to start',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.85),
+                        fontSize: 12,
+                        fontFamily: 'Medium',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
 
                   // Profile card
                   Container(
@@ -125,13 +135,28 @@ class HomeScreen extends StatelessWidget {
                     ),
                   ),
 
-                  const SizedBox(height: 100),
+                  const SizedBox(height: 28),
+
+                  // Section title
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4.0),
+                    child: Text(
+                      'Modules',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontFamily: 'Bold',
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
 
                   // Feature grid (4 cards)
                   GridView.count(
                     crossAxisCount: 2,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 16,
                     childAspectRatio: 1,
                     physics: const NeverScrollableScrollPhysics(),
                     shrinkWrap: true,
@@ -160,9 +185,8 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-                  SizedBox(
-                    height: 15,
-                  ),
+                  const SizedBox(height: 12),
+
                   _FeatureButton(
                     icon: Icons.flight,
                     label: 'Aircraft Status',
@@ -193,7 +217,6 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
-
 }
 
 class _FeatureButton extends StatelessWidget {

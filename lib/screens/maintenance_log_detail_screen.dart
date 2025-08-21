@@ -20,8 +20,23 @@ class MaintenanceLogDetailScreen extends StatelessWidget {
                     end: Alignment.bottomCenter,
                     colors: [
                       app_colors.primary,
-                      Color.lerp(app_colors.primary, app_colors.secondary, 0.10)!,
+                      Color.lerp(
+                          app_colors.primary, app_colors.secondary, 0.10)!,
                     ],
+                  ),
+                ),
+              ),
+            ),
+
+            // Watermark logo
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Align(
+                  alignment: Alignment.center,
+                  child: Opacity(
+                    opacity: 0.15,
+                    child: Image.asset('assets/images/logo.png',
+                        width: 440, fit: BoxFit.contain),
                   ),
                 ),
               ),
@@ -56,7 +71,16 @@ class MaintenanceLogDetailScreen extends StatelessWidget {
                     ],
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
+                  Text(
+                    'View full maintenance details and actions.',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.85),
+                      fontFamily: 'Medium',
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
 
                   // Main details card
                   Expanded(
@@ -71,7 +95,8 @@ class MaintenanceLogDetailScreen extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.black.withOpacity(0.2)),
+                          border:
+                              Border.all(color: Colors.black.withOpacity(0.2)),
                         ),
                         child: SingleChildScrollView(
                           child: Column(
