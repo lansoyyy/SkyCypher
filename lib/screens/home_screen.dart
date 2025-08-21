@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:skycypher/utils/colors.dart' as app_colors;
+import 'package:skycypher/screens/aircraft_selection_screen.dart';
+import 'package:skycypher/screens/maintenance_log_screen.dart';
+import 'package:skycypher/screens/aircraft_status_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -136,27 +139,41 @@ class HomeScreen extends StatelessWidget {
                       _FeatureButton(
                         icon: Icons.mic,
                         label: 'Voice Commands',
-                        onTap: () =>
-                            _tap(context, 'Voice-Controlled Inspection'),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const AircraftSelectionScreen(),
+                            ),
+                          );
+                        },
                       ),
                       _FeatureButton(
                         icon: Icons.build,
                         label: 'Maintenance Logs',
-                        onTap: () => _tap(context, 'Maintenance Log System'),
-                      ),
-                      _FeatureButton(
-                        icon: Icons.flight,
-                        label: 'Aircraft Status',
-                        onTap: () => _tap(context, 'Aircraft Status Overview'),
-                      ),
-                      _FeatureButton(
-                        icon: Icons.analytics,
-                        label: 'Reports',
-                        onTap: () => _tap(context, 'Reports'),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const MaintenanceLogScreen(),
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
-
+                  SizedBox(
+                    height: 15,
+                  ),
+                  _FeatureButton(
+                    icon: Icons.flight,
+                    label: 'Aircraft Status',
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const AircraftStatusScreen(),
+                        ),
+                      );
+                    },
+                  ),
                   Spacer(),
 
                   Center(
@@ -177,15 +194,6 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  void _tap(BuildContext context, String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$feature coming soon...'),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: app_colors.secondary,
-      ),
-    );
-  }
 }
 
 class _FeatureButton extends StatelessWidget {
@@ -202,7 +210,7 @@ class _FeatureButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 100,
+      height: 180,
       child: Card(
         elevation: 6,
         shadowColor: Colors.black.withOpacity(0.25),
