@@ -177,15 +177,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget _buildHeader() {
     return Column(
       children: [
-        const Text(
-          "YOU'RE CLEARED FOR ACTION",
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 26,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-            height: 1.2,
+        Center(
+          child: const Text(
+            "YOU'RE CLEARED FOR ACTION",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'Bold',
+              letterSpacing: 1.2,
+              height: 1.2,
+            ),
           ),
         ),
         const SizedBox(height: 8),
@@ -364,81 +367,119 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       },
       {
         'icon': Icons.flight_outlined,
-        'label': 'Aircraft\nStatus',
+        'label': 'Aircraft Status',
         'description': 'Real-time monitoring',
         'route': const AircraftStatusScreen(),
         'color': const Color(0xFF8B5CF6),
       },
     ];
 
-    return GridView.builder(
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 16,
-        crossAxisSpacing: 16,
-        childAspectRatio: 0.9,
-      ),
-      physics: const NeverScrollableScrollPhysics(),
-      shrinkWrap: true,
-      itemCount: modules.length,
-      itemBuilder: (context, index) {
-        return AnimatedBuilder(
-          animation: _cardAnimations[index],
+    return Column(
+      children: [
+        // First row - 2 cards in grid (Voice-Controlled and Maintenance)
+        GridView.builder(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 16,
+            crossAxisSpacing: 16,
+            childAspectRatio: 0.9,
+          ),
+          physics: const NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
+          itemCount: 2, // Only first 2 modules
+          itemBuilder: (context, index) {
+            return AnimatedBuilder(
+              animation: _cardAnimations[index],
+              builder: (context, child) {
+                return Transform.scale(
+                  scale: _cardAnimations[index].value,
+                  child: ModernFeatureCard(
+                    icon: modules[index]['icon'] as IconData,
+                    label: modules[index]['label'] as String,
+                    description: modules[index]['description'] as String,
+                    color: modules[index]['color'] as Color,
+                    onTap: () {
+                      HapticFeedback.mediumImpact();
+                      Navigator.of(context).push(
+                        PageRouteBuilder(
+                          pageBuilder:
+                              (context, animation, secondaryAnimation) =>
+                                  modules[index]['route'] as Widget,
+                          transitionsBuilder:
+                              (context, animation, secondaryAnimation, child) {
+                            return FadeTransition(
+                              opacity: animation,
+                              child: SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: const Offset(1.0, 0.0),
+                                  end: Offset.zero,
+                                ).animate(CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeInOut,
+                                )),
+                                child: child,
+                              ),
+                            );
+                          },
+                          transitionDuration: const Duration(milliseconds: 300),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            );
+          },
+        ),
+
+        const SizedBox(height: 16),
+
+        // Aircraft Status card - full width
+        AnimatedBuilder(
+          animation: _cardAnimations[2],
           builder: (context, child) {
             return Transform.scale(
-              scale: _cardAnimations[index].value,
-              child: ModernFeatureCard(
-                icon: modules[index]['icon'] as IconData,
-                label: modules[index]['label'] as String,
-                description: modules[index]['description'] as String,
-                color: modules[index]['color'] as Color,
-                onTap: modules[index]['route'] != null
-                    ? () {
-                        HapticFeedback.mediumImpact();
-                        Navigator.of(context).push(
-                          PageRouteBuilder(
-                            pageBuilder:
-                                (context, animation, secondaryAnimation) =>
-                                    modules[index]['route'] as Widget,
-                            transitionsBuilder: (context, animation,
-                                secondaryAnimation, child) {
-                              return FadeTransition(
-                                opacity: animation,
-                                child: SlideTransition(
-                                  position: Tween<Offset>(
-                                    begin: const Offset(1.0, 0.0),
-                                    end: Offset.zero,
-                                  ).animate(CurvedAnimation(
-                                    parent: animation,
-                                    curve: Curves.easeInOut,
-                                  )),
-                                  child: child,
-                                ),
-                              );
-                            },
-                            transitionDuration:
-                                const Duration(milliseconds: 300),
-                          ),
-                        );
-                      }
-                    : () {
-                        HapticFeedback.lightImpact();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text('Coming soon!'),
-                            behavior: SnackBarBehavior.floating,
-                            backgroundColor: app_colors.secondary,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
+              scale: _cardAnimations[2].value,
+              child: SizedBox(
+                width: double.infinity,
+                height: 120, // Slightly shorter since it's wider
+                child: ModernFeatureCard(
+                  icon: modules[2]['icon'] as IconData,
+                  label: modules[2]['label'] as String,
+                  description: modules[2]['description'] as String,
+                  color: modules[2]['color'] as Color,
+                  onTap: () {
+                    HapticFeedback.mediumImpact();
+                    Navigator.of(context).push(
+                      PageRouteBuilder(
+                        pageBuilder: (context, animation, secondaryAnimation) =>
+                            modules[2]['route'] as Widget,
+                        transitionsBuilder:
+                            (context, animation, secondaryAnimation, child) {
+                          return FadeTransition(
+                            opacity: animation,
+                            child: SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(1.0, 0.0),
+                                end: Offset.zero,
+                              ).animate(CurvedAnimation(
+                                parent: animation,
+                                curve: Curves.easeInOut,
+                              )),
+                              child: child,
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                        transitionDuration: const Duration(milliseconds: 300),
+                      ),
+                    );
+                  },
+                ),
               ),
             );
           },
-        );
-      },
+        ),
+      ],
     );
   }
 
@@ -592,47 +633,113 @@ class _ModernFeatureCardState extends State<ModernFeatureCard>
                       borderRadius: BorderRadius.circular(20),
                       child: Padding(
                         padding: const EdgeInsets.all(20),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: widget.color.withOpacity(0.2),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: widget.color.withOpacity(0.3),
-                                  width: 2,
-                                ),
-                              ),
-                              child: Icon(
-                                widget.icon,
-                                size: 28,
-                                color: widget.color,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              widget.label,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                height: 1.2,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              widget.description,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.7),
-                                fontSize: 10,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            // Use horizontal layout if width is significantly larger than height
+                            final isHorizontalLayout = constraints.maxWidth >
+                                constraints.maxHeight * 1.5;
+
+                            if (isHorizontalLayout) {
+                              return Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: widget.color.withOpacity(0.2),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: widget.color.withOpacity(0.3),
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      widget.icon,
+                                      size: 32,
+                                      color: widget.color,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 20),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          widget.label,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            height: 1.2,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          widget.description,
+                                          style: TextStyle(
+                                            color:
+                                                Colors.white.withOpacity(0.7),
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.arrow_forward_ios,
+                                    color: Colors.white.withOpacity(0.5),
+                                    size: 16,
+                                  ),
+                                ],
+                              );
+                            } else {
+                              return Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: widget.color.withOpacity(0.2),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: widget.color.withOpacity(0.3),
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      widget.icon,
+                                      size: 28,
+                                      color: widget.color,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    widget.label,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      height: 1.2,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    widget.description,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.7),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }
+                          },
                         ),
                       ),
                     ),

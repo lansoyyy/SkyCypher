@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:skycypher/utils/colors.dart' as app_colors;
+import 'package:skycypher/screens/voice_inspection_screen.dart';
 
 class AircraftSelectionScreen extends StatefulWidget {
   const AircraftSelectionScreen({super.key});
@@ -167,12 +168,32 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
                       onPressed: (_isSelectedAvailable &&
                               (_rpNumber?.isNotEmpty ?? false))
                           ? () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                      'Starting inspection: $_selectedModel | RP: $_rpNumber'),
-                                  behavior: SnackBarBehavior.floating,
-                                  backgroundColor: app_colors.secondary,
+                              Navigator.of(context).push(
+                                PageRouteBuilder(
+                                  pageBuilder: (context, animation,
+                                          secondaryAnimation) =>
+                                      VoiceInspectionScreen(
+                                    aircraftModel: _selectedModel,
+                                    rpNumber: _rpNumber!,
+                                  ),
+                                  transitionsBuilder: (context, animation,
+                                      secondaryAnimation, child) {
+                                    return FadeTransition(
+                                      opacity: animation,
+                                      child: SlideTransition(
+                                        position: Tween<Offset>(
+                                          begin: const Offset(1.0, 0.0),
+                                          end: Offset.zero,
+                                        ).animate(CurvedAnimation(
+                                          parent: animation,
+                                          curve: Curves.easeInOut,
+                                        )),
+                                        child: child,
+                                      ),
+                                    );
+                                  },
+                                  transitionDuration:
+                                      const Duration(milliseconds: 400),
                                 ),
                               );
                             }

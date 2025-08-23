@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:skycypher/screens/home_screen.dart';
 import 'package:skycypher/screens/splash_screen.dart';
 import 'package:skycypher/utils/colors.dart' as app_colors;
 
@@ -18,7 +19,7 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: app_colors.primary,
       ),
-      home: const SplashScreen(),
+      home: const HomeScreen(),
     );
   }
 }
