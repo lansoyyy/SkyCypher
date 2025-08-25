@@ -1,9 +1,17 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:skycypher/firebase_options.dart';
 import 'package:skycypher/screens/home_screen.dart';
 import 'package:skycypher/screens/splash_screen.dart';
 import 'package:skycypher/utils/colors.dart' as app_colors;
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    name: 'skycypher-d55ee',
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
   runApp(const MyApp());
 }
 

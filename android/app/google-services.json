@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "520359265517",
+    "project_id": "skycypher-d55ee",
+    "storage_bucket": "skycypher-d55ee.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:520359265517:android:8ca74158e5e7a60aa938e4",
+        "android_client_info": {
+          "package_name": "com.example.skycypher"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBQ6ho-9h5LZmeew42dPSSnPlTrszTMcB0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
