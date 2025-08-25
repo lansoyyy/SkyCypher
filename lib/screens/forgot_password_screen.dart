@@ -2,30 +2,24 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:skycypher/services/auth_service.dart';
-import 'package:skycypher/screens/welcome_splash_screen.dart';
-import 'package:skycypher/screens/signup_screen.dart';
-import 'package:skycypher/screens/forgot_password_screen.dart';
+import 'package:skycypher/screens/login_screen.dart';
 import 'package:skycypher/utils/colors.dart' as app_colors;
 import 'package:skycypher/widgets/button_widget.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class ForgotPasswordScreen extends StatefulWidget {
+  const ForgotPasswordScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen>
+class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _emailCtrl = TextEditingController();
-  final TextEditingController _passwordCtrl = TextEditingController();
   final FocusNode _emailFocus = FocusNode();
-  final FocusNode _passwordFocus = FocusNode();
-
-  bool _obscure = true;
-  bool _rememberMe = false;
   bool _isLoading = false;
+  bool _emailSent = false;
 
   late AnimationController _fadeController;
   late AnimationController _slideController;
@@ -69,9 +63,7 @@ class _LoginScreenState extends State<LoginScreen>
     _fadeController.dispose();
     _slideController.dispose();
     _emailCtrl.dispose();
-    _passwordCtrl.dispose();
     _emailFocus.dispose();
-    _passwordFocus.dispose();
     super.dispose();
   }
 
@@ -138,8 +130,35 @@ class _LoginScreenState extends State<LoginScreen>
                         position: _slideAnimation,
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 420),
-                          child: _buildLoginCard(theme, screenHeight),
+                          child: _buildForgotPasswordCard(theme, screenHeight),
                         ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Back button
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 16,
+                  left: 16,
+                  child: IconButton(
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      Navigator.of(context).pop();
+                    },
+                    icon: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.2),
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_ios,
+                        color: Colors.white,
+                        size: 20,
                       ),
                     ),
                   ),
@@ -152,7 +171,7 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildLoginCard(ThemeData theme, double screenHeight) {
+  Widget _buildForgotPasswordCard(ThemeData theme, double screenHeight) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.08),
@@ -175,23 +194,24 @@ class _LoginScreenState extends State<LoginScreen>
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Padding(
             padding: const EdgeInsets.all(32),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildHeader(theme),
-                  const SizedBox(height: 40),
-                  _buildFormFields(),
-                  const SizedBox(height: 24),
-                  _buildRememberMeAndForgot(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildHeader(theme),
+                const SizedBox(height: 40),
+                if (!_emailSent) ...[
+                  _buildEmailForm(),
                   const SizedBox(height: 32),
-                  _buildLoginButton(),
-                  const SizedBox(height: 24),
-                  _buildFooter(),
+                  _buildResetButton(),
+                ] else ...[
+                  _buildSuccessContent(),
+                  const SizedBox(height: 32),
+                  _buildResendButton(),
                 ],
-              ),
+                const SizedBox(height: 24),
+                _buildBackToLoginLink(),
+              ],
             ),
           ),
         ),
@@ -202,10 +222,17 @@ class _LoginScreenState extends State<LoginScreen>
   Widget _buildHeader(ThemeData theme) {
     return Column(
       children: [
-        // Logo with glow effect
+        // Icon with glow effect
         Container(
+          width: 80,
+          height: 80,
           decoration: BoxDecoration(
+            color: app_colors.secondary.withOpacity(0.2),
             shape: BoxShape.circle,
+            border: Border.all(
+              color: app_colors.secondary.withOpacity(0.3),
+              width: 2,
+            ),
             boxShadow: [
               BoxShadow(
                 color: app_colors.secondary.withOpacity(0.3),
@@ -214,23 +241,22 @@ class _LoginScreenState extends State<LoginScreen>
               ),
             ],
           ),
-          child: Image.asset(
-            'assets/images/logo.png',
-            width: 100,
-            height: 100,
-            fit: BoxFit.contain,
+          child: Icon(
+            _emailSent ? Icons.mark_email_read_outlined : Icons.lock_reset,
+            size: 40,
+            color: app_colors.secondary,
           ),
         ),
         const SizedBox(height: 24),
 
         // Headline
         Text(
-          'Welcome Back',
+          _emailSent ? 'Check Your Email' : 'Reset Password',
           textAlign: TextAlign.center,
           style: theme.textTheme.headlineMedium?.copyWith(
             color: Colors.white,
             fontWeight: FontWeight.bold,
-            fontSize: 32,
+            fontSize: 28,
             letterSpacing: -0.5,
           ),
         ),
@@ -238,11 +264,13 @@ class _LoginScreenState extends State<LoginScreen>
 
         // Subheading
         Text(
-          'Ready to log your next flight check?',
+          _emailSent
+              ? 'We\'ve sent a password reset link to your email address.'
+              : 'Enter your email address and we\'ll send you a link to reset your password.',
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyLarge?.copyWith(
             color: Colors.white.withOpacity(0.7),
-            fontSize: 16,
+            fontSize: 14,
             height: 1.5,
           ),
         ),
@@ -250,164 +278,160 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildFormFields() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildEmailField(),
-        const SizedBox(height: 20),
-        _buildPasswordField(),
-      ],
-    );
-  }
-
-  Widget _buildEmailField() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Email',
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.9),
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: _emailCtrl,
-          focusNode: _emailFocus,
-          keyboardType: TextInputType.emailAddress,
-          textInputAction: TextInputAction.next,
-          onFieldSubmitted: (_) => _passwordFocus.requestFocus(),
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-          ),
-          decoration: _modernFieldDecoration(
-            hint: 'Enter your email',
-            prefixIcon: Icons.email_outlined,
-          ),
-          validator: (v) {
-            if (v == null || v.isEmpty) {
-              return 'Email is required';
-            }
-            if (!AuthService.isValidEmail(v)) {
-              return 'Please enter a valid email';
-            }
-            return null;
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPasswordField() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Password',
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.9),
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: _passwordCtrl,
-          focusNode: _passwordFocus,
-          obscureText: _obscure,
-          textInputAction: TextInputAction.done,
-          onFieldSubmitted: (_) => _onLogin(),
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-          ),
-          decoration: _modernFieldDecoration(
-            hint: 'Enter your password',
-            prefixIcon: Icons.lock_outline,
-            suffixIcon: IconButton(
-              onPressed: () {
-                setState(() => _obscure = !_obscure);
-                HapticFeedback.selectionClick();
-              },
-              icon: Icon(
-                _obscure
-                    ? Icons.visibility_outlined
-                    : Icons.visibility_off_outlined,
-                color: Colors.white.withOpacity(0.7),
-                size: 22,
-              ),
+  Widget _buildEmailForm() {
+    return Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Email Address',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.9),
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          validator: (v) =>
-              (v == null || v.isEmpty) ? 'Password is required' : null,
-        ),
-      ],
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _emailCtrl,
+            focusNode: _emailFocus,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => _onResetPassword(),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+            ),
+            decoration: _modernFieldDecoration(
+              hint: 'Enter your email address',
+              prefixIcon: Icons.email_outlined,
+            ),
+            validator: (v) {
+              if (v == null || v.isEmpty) {
+                return 'Email is required';
+              }
+              if (!AuthService.isValidEmail(v)) {
+                return 'Please enter a valid email address';
+              }
+              return null;
+            },
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildRememberMeAndForgot() {
-    return Row(
+  Widget _buildSuccessContent() {
+    return Column(
       children: [
-        GestureDetector(
-          onTap: () {
-            setState(() => _rememberMe = !_rememberMe);
-            HapticFeedback.selectionClick();
-          },
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.green.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: Colors.green.withOpacity(0.3),
+            ),
+          ),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  color:
-                      _rememberMe ? app_colors.secondary : Colors.transparent,
-                  border: Border.all(
-                    color: _rememberMe
-                        ? app_colors.secondary
-                        : Colors.white.withOpacity(0.5),
-                    width: 2,
-                  ),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: _rememberMe
-                    ? const Icon(
-                        Icons.check,
-                        size: 14,
-                        color: Colors.white,
-                      )
-                    : null,
+              Icon(
+                Icons.check_circle_outline,
+                color: Colors.green,
+                size: 24,
               ),
-              const SizedBox(width: 8),
-              Text(
-                'Remember me',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.8),
-                  fontSize: 14,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Email Sent Successfully!',
+                      style: TextStyle(
+                        color: Colors.green,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Check your inbox and follow the instructions to reset your password.',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.8),
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
-        const Spacer(),
+        const SizedBox(height: 20),
+        Text(
+          'Didn\'t receive the email? Check your spam folder or try again.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.6),
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildResetButton() {
+    return ButtonWidget(
+      label: 'Send Reset Link',
+      onPressed: _isLoading ? () {} : _onResetPassword,
+      isLoading: _isLoading,
+      color: app_colors.secondary,
+      width: double.infinity,
+      height: 56,
+      radius: 16,
+      fontSize: 18,
+    );
+  }
+
+  Widget _buildResendButton() {
+    return ButtonWidget(
+      label: 'Resend Email',
+      onPressed: _isLoading ? () {} : _onResetPassword,
+      isLoading: _isLoading,
+      color: app_colors.secondary.withOpacity(0.8),
+      width: double.infinity,
+      height: 56,
+      radius: 16,
+      fontSize: 18,
+    );
+  }
+
+  Widget _buildBackToLoginLink() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          'Remember your password? ',
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.7),
+            fontSize: 14,
+          ),
+        ),
         TextButton(
           onPressed: () {
             HapticFeedback.lightImpact();
-            Navigator.of(context).push(
+            Navigator.of(context).pushReplacement(
               PageRouteBuilder(
                 pageBuilder: (context, animation, secondaryAnimation) =>
-                    const ForgotPasswordScreen(),
+                    const LoginScreen(),
                 transitionsBuilder:
                     (context, animation, secondaryAnimation, child) {
                   return FadeTransition(
                     opacity: animation,
                     child: SlideTransition(
                       position: Tween<Offset>(
-                        begin: const Offset(1.0, 0.0),
+                        begin: const Offset(-1.0, 0.0),
                         end: Offset.zero,
                       ).animate(CurvedAnimation(
                         parent: animation,
@@ -422,7 +446,7 @@ class _LoginScreenState extends State<LoginScreen>
             );
           },
           child: Text(
-            'Forgot Password?',
+            'Sign In',
             style: TextStyle(
               color: app_colors.secondary,
               fontSize: 14,
@@ -434,101 +458,9 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildLoginButton() {
-    return ButtonWidget(
-      label: 'Sign In',
-      onPressed: _isLoading ? () {} : _onLogin,
-      isLoading: _isLoading,
-      color: app_colors.secondary,
-      width: double.infinity,
-      height: 56,
-      radius: 16,
-      fontSize: 18,
-    );
-  }
-
-  Widget _buildFooter() {
-    return Column(
-      children: [
-        Container(
-          height: 1,
-          margin: const EdgeInsets.symmetric(vertical: 16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.transparent,
-                Colors.white.withOpacity(0.2),
-                Colors.transparent,
-              ],
-            ),
-          ),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'Don\'t have an account? ',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.7),
-                fontSize: 14,
-              ),
-            ),
-            TextButton(
-              onPressed: () {
-                HapticFeedback.lightImpact();
-                Navigator.of(context).push(
-                  PageRouteBuilder(
-                    pageBuilder: (context, animation, secondaryAnimation) =>
-                        const SignUpScreen(),
-                    transitionsBuilder:
-                        (context, animation, secondaryAnimation, child) {
-                      return FadeTransition(
-                        opacity: animation,
-                        child: SlideTransition(
-                          position: Tween<Offset>(
-                            begin: const Offset(1.0, 0.0),
-                            end: Offset.zero,
-                          ).animate(CurvedAnimation(
-                            parent: animation,
-                            curve: Curves.easeInOut,
-                          )),
-                          child: child,
-                        ),
-                      );
-                    },
-                    transitionDuration: const Duration(milliseconds: 300),
-                  ),
-                );
-              },
-              child: Text(
-                'Sign Up',
-                style: TextStyle(
-                  color: app_colors.secondary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'SkyCyphers Inc.',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.6),
-            fontSize: 14,
-            letterSpacing: 0.5,
-          ),
-        ),
-      ],
-    );
-  }
-
   InputDecoration _modernFieldDecoration({
     required String hint,
     required IconData prefixIcon,
-    Widget? suffixIcon,
   }) {
     return InputDecoration(
       hintText: hint,
@@ -543,7 +475,6 @@ class _LoginScreenState extends State<LoginScreen>
         color: Colors.white.withOpacity(0.7),
         size: 22,
       ),
-      suffixIcon: suffixIcon,
       contentPadding: const EdgeInsets.symmetric(
         horizontal: 20,
         vertical: 16,
@@ -586,8 +517,14 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  void _onLogin() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+  void _onResetPassword() async {
+    if (_emailSent) {
+      // If email already sent, this is a resend action
+      setState(() => _isLoading = true);
+    } else {
+      // First time sending, validate form
+      if (!(_formKey.currentState?.validate() ?? false)) return;
+    }
 
     // Unfocus text fields
     FocusScope.of(context).unfocus();
@@ -598,37 +535,29 @@ class _LoginScreenState extends State<LoginScreen>
     setState(() => _isLoading = true);
 
     try {
-      await AuthService.signInWithEmailAndPassword(
+      await AuthService.sendPasswordResetEmail(
         email: _emailCtrl.text.trim(),
-        password: _passwordCtrl.text,
       );
 
       if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _emailSent = true;
+        });
+
         // Success feedback
         HapticFeedback.heavyImpact();
 
-        // Navigate to welcome screen
-        Navigator.of(context).pushReplacement(
-          PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) =>
-                const WelcomeSplashScreen(),
-            transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              return FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(1.0, 0.0),
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeInOut,
-                  )),
-                  child: child,
-                ),
-              );
-            },
-            transitionDuration: const Duration(milliseconds: 500),
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_emailSent
+                ? 'Password reset email sent again!'
+                : 'Password reset email sent successfully!'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         );
       }

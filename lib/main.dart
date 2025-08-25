@@ -1,8 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:skycypher/firebase_options.dart';
-import 'package:skycypher/screens/home_screen.dart';
-import 'package:skycypher/screens/splash_screen.dart';
+import 'package:skycypher/widgets/auth_wrapper.dart';
 import 'package:skycypher/utils/colors.dart' as app_colors;
 
 void main() async {
@@ -27,7 +26,7 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: app_colors.primary,
       ),
-      home: const HomeScreen(),
+      home: const AuthWrapper(),
     );
   }
 }

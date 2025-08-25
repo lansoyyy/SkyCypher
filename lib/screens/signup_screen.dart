@@ -2,29 +2,31 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:skycypher/services/auth_service.dart';
+import 'package:skycypher/screens/login_screen.dart';
 import 'package:skycypher/screens/welcome_splash_screen.dart';
-import 'package:skycypher/screens/signup_screen.dart';
-import 'package:skycypher/screens/forgot_password_screen.dart';
 import 'package:skycypher/utils/colors.dart' as app_colors;
 import 'package:skycypher/widgets/button_widget.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class SignUpScreen extends StatefulWidget {
+  const SignUpScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<SignUpScreen> createState() => _SignUpScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen>
+class _SignUpScreenState extends State<SignUpScreen>
     with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _emailCtrl = TextEditingController();
   final TextEditingController _passwordCtrl = TextEditingController();
+  final TextEditingController _confirmPasswordCtrl = TextEditingController();
   final FocusNode _emailFocus = FocusNode();
   final FocusNode _passwordFocus = FocusNode();
-
-  bool _obscure = true;
-  bool _rememberMe = false;
+  final FocusNode _confirmPasswordFocus = FocusNode();
+  String? _userType;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+  bool _agreeToTerms = false;
   bool _isLoading = false;
 
   late AnimationController _fadeController;
@@ -70,8 +72,10 @@ class _LoginScreenState extends State<LoginScreen>
     _slideController.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
+    _confirmPasswordCtrl.dispose();
     _emailFocus.dispose();
     _passwordFocus.dispose();
+    _confirmPasswordFocus.dispose();
     super.dispose();
   }
 
@@ -138,7 +142,7 @@ class _LoginScreenState extends State<LoginScreen>
                         position: _slideAnimation,
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 420),
-                          child: _buildLoginCard(theme, screenHeight),
+                          child: _buildSignUpCard(theme, screenHeight),
                         ),
                       ),
                     ),
@@ -152,7 +156,7 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildLoginCard(ThemeData theme, double screenHeight) {
+  Widget _buildSignUpCard(ThemeData theme, double screenHeight) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.08),
@@ -182,14 +186,14 @@ class _LoginScreenState extends State<LoginScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _buildHeader(theme),
-                  const SizedBox(height: 40),
-                  _buildFormFields(),
-                  const SizedBox(height: 24),
-                  _buildRememberMeAndForgot(),
                   const SizedBox(height: 32),
-                  _buildLoginButton(),
+                  _buildFormFields(),
+                  const SizedBox(height: 20),
+                  _buildTermsAndConditions(),
+                  const SizedBox(height: 32),
+                  _buildSignUpButton(),
                   const SizedBox(height: 24),
-                  _buildFooter(),
+                  _buildLoginLink(),
                 ],
               ),
             ),
@@ -216,21 +220,21 @@ class _LoginScreenState extends State<LoginScreen>
           ),
           child: Image.asset(
             'assets/images/logo.png',
-            width: 100,
-            height: 100,
+            width: 80,
+            height: 80,
             fit: BoxFit.contain,
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 20),
 
         // Headline
         Text(
-          'Welcome Back',
+          'Create Account',
           textAlign: TextAlign.center,
           style: theme.textTheme.headlineMedium?.copyWith(
             color: Colors.white,
             fontWeight: FontWeight.bold,
-            fontSize: 32,
+            fontSize: 28,
             letterSpacing: -0.5,
           ),
         ),
@@ -238,11 +242,11 @@ class _LoginScreenState extends State<LoginScreen>
 
         // Subheading
         Text(
-          'Ready to log your next flight check?',
+          'Join SkyCypher and start your aviation journey',
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyLarge?.copyWith(
             color: Colors.white.withOpacity(0.7),
-            fontSize: 16,
+            fontSize: 14,
             height: 1.5,
           ),
         ),
@@ -254,9 +258,58 @@ class _LoginScreenState extends State<LoginScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _buildUserTypeField(),
+        const SizedBox(height: 20),
         _buildEmailField(),
         const SizedBox(height: 20),
         _buildPasswordField(),
+        const SizedBox(height: 20),
+        _buildConfirmPasswordField(),
+      ],
+    );
+  }
+
+  Widget _buildUserTypeField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'User Type',
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.9),
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          value: _userType,
+          dropdownColor: app_colors.primary,
+          iconEnabledColor: Colors.white,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+          ),
+          items: const [
+            DropdownMenuItem(
+              value: 'Pilot',
+              child: Text('Pilot'),
+            ),
+            DropdownMenuItem(
+              value: 'Mechanic',
+              child: Text('Mechanic'),
+            ),
+          ],
+          onChanged: (v) {
+            setState(() => _userType = v);
+            HapticFeedback.selectionClick();
+          },
+          validator: (v) => v == null ? 'Please select a user type' : null,
+          decoration: _modernFieldDecoration(
+            hint: 'Select user type',
+            prefixIcon: Icons.person_outline,
+          ),
+        ),
       ],
     );
   }
@@ -318,9 +371,9 @@ class _LoginScreenState extends State<LoginScreen>
         TextFormField(
           controller: _passwordCtrl,
           focusNode: _passwordFocus,
-          obscureText: _obscure,
-          textInputAction: TextInputAction.done,
-          onFieldSubmitted: (_) => _onLogin(),
+          obscureText: _obscurePassword,
+          textInputAction: TextInputAction.next,
+          onFieldSubmitted: (_) => _confirmPasswordFocus.requestFocus(),
           style: const TextStyle(
             color: Colors.white,
             fontSize: 16,
@@ -330,11 +383,11 @@ class _LoginScreenState extends State<LoginScreen>
             prefixIcon: Icons.lock_outline,
             suffixIcon: IconButton(
               onPressed: () {
-                setState(() => _obscure = !_obscure);
+                setState(() => _obscurePassword = !_obscurePassword);
                 HapticFeedback.selectionClick();
               },
               icon: Icon(
-                _obscure
+                _obscurePassword
                     ? Icons.visibility_outlined
                     : Icons.visibility_off_outlined,
                 color: Colors.white.withOpacity(0.7),
@@ -342,72 +395,177 @@ class _LoginScreenState extends State<LoginScreen>
               ),
             ),
           ),
-          validator: (v) =>
-              (v == null || v.isEmpty) ? 'Password is required' : null,
+          validator: (v) {
+            if (v == null || v.isEmpty) {
+              return 'Password is required';
+            }
+            return AuthService.validatePassword(v);
+          },
         ),
       ],
     );
   }
 
-  Widget _buildRememberMeAndForgot() {
-    return Row(
+  Widget _buildConfirmPasswordField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        GestureDetector(
-          onTap: () {
-            setState(() => _rememberMe = !_rememberMe);
-            HapticFeedback.selectionClick();
-          },
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  color:
-                      _rememberMe ? app_colors.secondary : Colors.transparent,
-                  border: Border.all(
-                    color: _rememberMe
-                        ? app_colors.secondary
-                        : Colors.white.withOpacity(0.5),
-                    width: 2,
-                  ),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: _rememberMe
-                    ? const Icon(
-                        Icons.check,
-                        size: 14,
-                        color: Colors.white,
-                      )
-                    : null,
+        Text(
+          'Confirm Password',
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.9),
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: _confirmPasswordCtrl,
+          focusNode: _confirmPasswordFocus,
+          obscureText: _obscureConfirmPassword,
+          textInputAction: TextInputAction.done,
+          onFieldSubmitted: (_) => _onSignUp(),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+          ),
+          decoration: _modernFieldDecoration(
+            hint: 'Confirm your password',
+            prefixIcon: Icons.lock_outline,
+            suffixIcon: IconButton(
+              onPressed: () {
+                setState(
+                    () => _obscureConfirmPassword = !_obscureConfirmPassword);
+                HapticFeedback.selectionClick();
+              },
+              icon: Icon(
+                _obscureConfirmPassword
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+                color: Colors.white.withOpacity(0.7),
+                size: 22,
               ),
-              const SizedBox(width: 8),
-              Text(
-                'Remember me',
+            ),
+          ),
+          validator: (v) {
+            if (v == null || v.isEmpty) {
+              return 'Please confirm your password';
+            }
+            if (v != _passwordCtrl.text) {
+              return 'Passwords do not match';
+            }
+            return null;
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTermsAndConditions() {
+    return GestureDetector(
+      onTap: () {
+        setState(() => _agreeToTerms = !_agreeToTerms);
+        HapticFeedback.selectionClick();
+      },
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 20,
+            height: 20,
+            margin: const EdgeInsets.only(top: 2),
+            decoration: BoxDecoration(
+              color: _agreeToTerms ? app_colors.secondary : Colors.transparent,
+              border: Border.all(
+                color: _agreeToTerms
+                    ? app_colors.secondary
+                    : Colors.white.withOpacity(0.5),
+                width: 2,
+              ),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: _agreeToTerms
+                ? const Icon(
+                    Icons.check,
+                    size: 14,
+                    color: Colors.white,
+                  )
+                : null,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                text: 'I agree to the ',
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.8),
                   fontSize: 14,
                 ),
+                children: [
+                  TextSpan(
+                    text: 'Terms of Service',
+                    style: TextStyle(
+                      color: app_colors.secondary,
+                      fontWeight: FontWeight.w600,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                  const TextSpan(text: ' and '),
+                  TextSpan(
+                    text: 'Privacy Policy',
+                    style: TextStyle(
+                      color: app_colors.secondary,
+                      fontWeight: FontWeight.w600,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSignUpButton() {
+    return ButtonWidget(
+      label: 'Create Account',
+      onPressed: _isLoading || !_agreeToTerms ? () {} : _onSignUp,
+      isLoading: _isLoading,
+      color: _agreeToTerms ? app_colors.secondary : Colors.grey,
+      width: double.infinity,
+      height: 56,
+      radius: 16,
+      fontSize: 18,
+    );
+  }
+
+  Widget _buildLoginLink() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          'Already have an account? ',
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.7),
+            fontSize: 14,
           ),
         ),
-        const Spacer(),
         TextButton(
           onPressed: () {
             HapticFeedback.lightImpact();
-            Navigator.of(context).push(
+            Navigator.of(context).pushReplacement(
               PageRouteBuilder(
                 pageBuilder: (context, animation, secondaryAnimation) =>
-                    const ForgotPasswordScreen(),
+                    const LoginScreen(),
                 transitionsBuilder:
                     (context, animation, secondaryAnimation, child) {
                   return FadeTransition(
                     opacity: animation,
                     child: SlideTransition(
                       position: Tween<Offset>(
-                        begin: const Offset(1.0, 0.0),
+                        begin: const Offset(-1.0, 0.0),
                         end: Offset.zero,
                       ).animate(CurvedAnimation(
                         parent: animation,
@@ -422,103 +580,12 @@ class _LoginScreenState extends State<LoginScreen>
             );
           },
           child: Text(
-            'Forgot Password?',
+            'Sign In',
             style: TextStyle(
               color: app_colors.secondary,
               fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLoginButton() {
-    return ButtonWidget(
-      label: 'Sign In',
-      onPressed: _isLoading ? () {} : _onLogin,
-      isLoading: _isLoading,
-      color: app_colors.secondary,
-      width: double.infinity,
-      height: 56,
-      radius: 16,
-      fontSize: 18,
-    );
-  }
-
-  Widget _buildFooter() {
-    return Column(
-      children: [
-        Container(
-          height: 1,
-          margin: const EdgeInsets.symmetric(vertical: 16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.transparent,
-                Colors.white.withOpacity(0.2),
-                Colors.transparent,
-              ],
-            ),
-          ),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'Don\'t have an account? ',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.7),
-                fontSize: 14,
-              ),
-            ),
-            TextButton(
-              onPressed: () {
-                HapticFeedback.lightImpact();
-                Navigator.of(context).push(
-                  PageRouteBuilder(
-                    pageBuilder: (context, animation, secondaryAnimation) =>
-                        const SignUpScreen(),
-                    transitionsBuilder:
-                        (context, animation, secondaryAnimation, child) {
-                      return FadeTransition(
-                        opacity: animation,
-                        child: SlideTransition(
-                          position: Tween<Offset>(
-                            begin: const Offset(1.0, 0.0),
-                            end: Offset.zero,
-                          ).animate(CurvedAnimation(
-                            parent: animation,
-                            curve: Curves.easeInOut,
-                          )),
-                          child: child,
-                        ),
-                      );
-                    },
-                    transitionDuration: const Duration(milliseconds: 300),
-                  ),
-                );
-              },
-              child: Text(
-                'Sign Up',
-                style: TextStyle(
-                  color: app_colors.secondary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'SkyCyphers Inc.',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.6),
-            fontSize: 14,
-            letterSpacing: 0.5,
           ),
         ),
       ],
@@ -586,8 +653,22 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  void _onLogin() async {
+  void _onSignUp() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (!_agreeToTerms) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+              'Please agree to the Terms of Service and Privacy Policy'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+      return;
+    }
 
     // Unfocus text fields
     FocusScope.of(context).unfocus();
@@ -598,14 +679,28 @@ class _LoginScreenState extends State<LoginScreen>
     setState(() => _isLoading = true);
 
     try {
-      await AuthService.signInWithEmailAndPassword(
+      await AuthService.signUpWithEmailAndPassword(
         email: _emailCtrl.text.trim(),
         password: _passwordCtrl.text,
+        userType: _userType!,
       );
 
       if (mounted) {
         // Success feedback
         HapticFeedback.heavyImpact();
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+                'Account created successfully! Please verify your email.'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
 
         // Navigate to welcome screen
         Navigator.of(context).pushReplacement(

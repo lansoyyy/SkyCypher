@@ -5,6 +5,8 @@ import 'package:skycypher/utils/colors.dart' as app_colors;
 import 'package:skycypher/screens/aircraft_selection_screen.dart';
 import 'package:skycypher/screens/maintenance_log_screen.dart';
 import 'package:skycypher/screens/aircraft_status_screen.dart';
+import 'package:skycypher/widgets/logout_widget.dart';
+import 'package:skycypher/services/auth_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -20,6 +22,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late Animation<Offset> _slideAnimation;
   late List<AnimationController> _cardControllers;
   late List<Animation<double>> _cardAnimations;
+
+  // User data variables
+  String? _userName;
+  String? _userEmail;
+  String? _userType;
+  bool _isLoadingUserData = true;
 
   @override
   void initState() {
@@ -70,6 +78,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }).toList();
 
     _startAnimations();
+    _fetchUserData();
   }
 
   void _startAnimations() async {
@@ -81,6 +90,47 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     for (int i = 0; i < _cardControllers.length; i++) {
       await Future.delayed(const Duration(milliseconds: 150));
       if (mounted) _cardControllers[i].forward();
+    }
+  }
+
+  Future<void> _fetchUserData() async {
+    HapticFeedback.lightImpact();
+    try {
+      final userData = await AuthService.getUserData();
+      final currentUser = AuthService.currentUser;
+
+      if (mounted && userData != null && currentUser != null) {
+        setState(() {
+          _userEmail = currentUser.email;
+          _userType = userData['userType'] as String?;
+          // Extract and format name from email (part before @)
+          String emailPrefix = _userEmail?.split('@').first ?? 'user';
+
+          // Handle common separators and formatting
+          _userName = emailPrefix
+              .replaceAll(RegExp(r'[._-]'),
+                  ' ') // Replace dots, underscores, hyphens with spaces
+              .split(' ')
+              .where((word) => word.isNotEmpty) // Remove empty strings
+              .map((word) =>
+                  word[0].toUpperCase() + word.substring(1).toLowerCase())
+              .join(' ');
+
+          // Fallback if the formatting results in empty string
+          if (_userName?.isEmpty == true) {
+            _userName = 'User';
+          }
+          _isLoadingUserData = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _userName = 'User';
+          _userType = 'Member';
+          _isLoadingUserData = false;
+        });
+      }
     }
   }
 
@@ -148,20 +198,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 SafeArea(
                   child: SlideTransition(
                     position: _slideAnimation,
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.all(20.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildHeader(),
-                          const SizedBox(height: 24),
-                          _buildProfileCard(),
-                          const SizedBox(height: 32),
-                          _buildModulesSection(),
-                          SizedBox(height: screenHeight * 0.05),
-                          _buildFooter(),
-                        ],
+                    child: RefreshIndicator(
+                      onRefresh: _fetchUserData,
+                      color: app_colors.secondary,
+                      backgroundColor: Colors.white,
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
+                        ),
+                        padding: const EdgeInsets.all(20.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildHeader(),
+                            const SizedBox(height: 24),
+                            _buildProfileCard(),
+                            const SizedBox(height: 32),
+                            _buildModulesSection(),
+                            SizedBox(height: screenHeight * 0.05),
+                            _buildFooter(),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -265,11 +322,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   child: CircleAvatar(
                     radius: 32,
                     backgroundColor: app_colors.secondary,
-                    child: Icon(
-                      Icons.person,
-                      color: Colors.white,
-                      size: 32,
-                    ),
+                    child: _isLoadingUserData
+                        ? Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.3),
+                              shape: BoxShape.circle,
+                            ),
+                          )
+                        : Text(
+                            (_userName?.isNotEmpty == true
+                                ? _userName![0].toUpperCase()
+                                : _userEmail?.isNotEmpty == true
+                                    ? _userEmail![0].toUpperCase()
+                                    : 'U'),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -277,36 +350,75 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Engr. Tricia Bermil',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      _isLoadingUserData
+                          ? Container(
+                              height: 24,
+                              width: 150,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.3),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            )
+                          : Text(
+                              _userName ?? 'User',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                       const SizedBox(height: 4),
-                      Text(
-                        'Welcome back to SkyCypher',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.8),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
+                      _isLoadingUserData
+                          ? Container(
+                              height: 16,
+                              width: 120,
+                              margin: const EdgeInsets.only(top: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            )
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _userType ?? 'Member',
+                                  style: TextStyle(
+                                    color: app_colors.secondary,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Welcome back to SkyCypher',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.8),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.notifications_outlined,
-                    color: Colors.white.withOpacity(0.8),
-                    size: 24,
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    showLogoutDialog(context);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.logout,
+                      color: Colors.white.withOpacity(0.8),
+                      size: 24,
+                    ),
                   ),
                 ),
               ],
