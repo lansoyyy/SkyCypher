@@ -1,10 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:skycypher/utils/colors.dart' as app_colors;
 import 'package:skycypher/screens/maintenance_log_detail_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'package:intl/intl.dart';
+import 'package:skycypher/models/maintenance_log.dart';
+import 'package:skycypher/services/maintenance_log_service.dart';
 
-class MaintenanceLogScreen extends StatelessWidget {
+class MaintenanceLogScreen extends StatefulWidget {
   const MaintenanceLogScreen({super.key});
 
+  @override
+  State<MaintenanceLogScreen> createState() => _MaintenanceLogScreenState();
+}
+
+class _MaintenanceLogScreenState extends State<MaintenanceLogScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -82,26 +94,76 @@ class MaintenanceLogScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
 
-                  // First info card
-                  _InfoCard(
-                    rows: const [
-                      'Component: Hydraulic Fluid Leak – Left Main Gear',
-                      'Date: July 26, 2025',
-                      'Location: Hangar 3 – Mactan-Cebu International Airport',
-                      'Inspected By: Engr. Tricia Bermil',
-                      'Aircraft:  CESSNA 152 (RP - N3978P)',
-                    ],
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const MaintenanceLogDetailScreen(),
-                        ),
-                      );
-                    },
+                  // Maintenance logs list
+                  Expanded(
+                    child: StreamBuilder<QuerySnapshot>(
+                      stream: MaintenanceLogService.getMaintenanceLogsStream(),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return Center(
+                            child: Text('Error: ${snapshot.error}'),
+                          );
+                        }
+
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+
+                        if (snapshot.hasData &&
+                            snapshot.data!.docs.isNotEmpty) {
+                          return ListView.builder(
+                            itemCount: snapshot.data!.docs.length,
+                            itemBuilder: (context, index) {
+                              DocumentSnapshot document =
+                                  snapshot.data!.docs[index];
+                              Map<String, dynamic> data =
+                                  document.data() as Map<String, dynamic>;
+
+                              // Create MaintenanceLog object from document data
+                              final maintenanceLog =
+                                  MaintenanceLog.fromDocument(
+                                      data, document.id);
+
+                              return _InfoCard(
+                                rows: [
+                                  'Component: ${data['component'] ?? 'N/A'}',
+                                  'Date: ${data['date'] ?? 'N/A'}',
+                                  'Location: ${data['location'] ?? 'N/A'}',
+                                  'Inspected By: ${data['inspectedBy'] ?? 'N/A'}',
+                                  'Aircraft: ${data['aircraft'] ?? 'N/A'}',
+                                ],
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          MaintenanceLogDetailScreen(
+                                              maintenanceLog: maintenanceLog),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          );
+                        } else {
+                          return const Center(
+                            child: Text(
+                              'No maintenance logs found.\nTap the + button to add one.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                    ),
                   ),
 
-                  const Spacer(),
-
+                  const SizedBox(height: 12),
                   Center(
                     child: Text(
                       'Tip: Click the paper plane to see more information.',
@@ -122,134 +184,329 @@ class MaintenanceLogScreen extends StatelessWidget {
   }
 
   void _showAddLogDialog(BuildContext context) {
+    // Controllers for text fields
+    final componentController = TextEditingController();
+    final locationController = TextEditingController();
+    final inspectedByController = TextEditingController();
+    final aircraftController = TextEditingController();
+    final detailedInspectionController = TextEditingController();
+    final reportedIssueController = TextEditingController();
+    final actionTakenController = TextEditingController();
+
+    // Date picker
+    DateTime? selectedDate;
+    final dateFormat = DateFormat('MMMM dd, yyyy');
+
+    // Image picker
+    File? selectedImage;
+
+    void _pickImage() async {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+      if (image != null) {
+        // We need to access the setState of the dialog's StatefulBuilder
+        // This is a bit tricky, so we'll handle it differently
+      }
+    }
+
+    void _pickDate() async {
+      final DateTime? picked = await showDatePicker(
+        context: context,
+        initialDate: DateTime.now(),
+        firstDate: DateTime(2020),
+        lastDate: DateTime(2030),
+      );
+      if (picked != null && picked != selectedDate) {
+        // We need to access the setState of the dialog's StatefulBuilder
+        // This is a bit tricky, so we'll handle it differently
+      }
+    }
+
+    void _saveLog() async {
+      try {
+        await MaintenanceLogService.addMaintenanceLog(
+          component: componentController.text,
+          date: selectedDate != null ? dateFormat.format(selectedDate!) : '',
+          location: locationController.text,
+          inspectedBy: inspectedByController.text,
+          aircraft: aircraftController.text,
+          detailedInspection: detailedInspectionController.text,
+          reportedIssue: reportedIssueController.text,
+          actionTaken: actionTakenController.text,
+          image: selectedImage,
+        );
+
+        if (context.mounted) {
+          Navigator.of(context).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Maintenance log saved successfully.'),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: app_colors.secondary,
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error saving maintenance log: $e'),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+
     showDialog(
       context: context,
       builder: (dialogContext) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(dialogContext).size.height * 0.8,
-              minWidth: 360,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    'New Maintenance Log',
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontSize: 20,
-                      fontFamily: 'Bold',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: const [
-                          _LabeledField(
-                              label: 'Component', icon: Icons.build_outlined),
-                          _LabeledField(
-                              label: 'Date', icon: Icons.event_outlined),
-                          _LabeledField(
-                              label: 'Location', icon: Icons.place_outlined),
-                          _LabeledField(
-                              label: 'Inspected By',
-                              icon: Icons.person_outline),
-                          _LabeledField(
-                              label: 'Aircraft', icon: Icons.flight_outlined),
-                          _LabeledField(
-                              label: 'Detailed Inspection',
-                              maxLines: 3,
-                              icon: Icons.description_outlined),
-                          _LabeledField(
-                              label: 'Reported Issue',
-                              maxLines: 3,
-                              icon: Icons.report_problem_outlined),
-                          _LabeledField(
-                              label: 'Action Taken',
-                              maxLines: 3,
-                              icon: Icons.task_alt_outlined),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: app_colors.secondary,
-                        foregroundColor: Colors.black,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text(
-                                'Attachment picker not implemented.'),
-                            behavior: SnackBarBehavior.floating,
-                            backgroundColor: app_colors.secondary,
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.attach_file_rounded),
-                      label: const Text(
-                        'Attach Photo (placeholder)',
-                        style: TextStyle(fontFamily: 'Bold'),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(dialogContext).size.height * 0.8,
+                  minWidth: 360,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      TextButton(
-                        onPressed: () => Navigator.of(dialogContext).pop(),
-                        child: const Text(
-                          'Cancel',
-                          style: TextStyle(fontFamily: 'Bold'),
+                      const Text(
+                        'New Maintenance Log',
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 20,
+                          fontFamily: 'Bold',
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: app_colors.secondary,
-                          foregroundColor: Colors.black,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
+                      const SizedBox(height: 12),
+                      Flexible(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              _LabeledField(
+                                controller: componentController,
+                                label: 'Component',
+                                icon: Icons.build_outlined,
+                              ),
+                              // Date field with picker
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Date',
+                                      style: TextStyle(
+                                        color: Colors.black.withOpacity(0.8),
+                                        fontSize: 14,
+                                        fontFamily: 'Medium',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    TextField(
+                                      readOnly: true,
+                                      controller: TextEditingController(
+                                          text: selectedDate != null
+                                              ? dateFormat.format(selectedDate!)
+                                              : ''),
+                                      style: const TextStyle(
+                                          fontFamily: 'Regular', fontSize: 14),
+                                      decoration: InputDecoration(
+                                        hintText: 'Select Date',
+                                        prefixIcon: const Icon(
+                                            Icons.event_outlined,
+                                            color: Colors.black87),
+                                        filled: true,
+                                        fillColor: Colors.white,
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                                horizontal: 12, vertical: 10),
+                                        border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                          borderSide: BorderSide(
+                                              color: Colors.black
+                                                  .withOpacity(0.2)),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                          borderSide: BorderSide(
+                                              color: app_colors.secondary,
+                                              width: 1.5),
+                                        ),
+                                      ),
+                                      onTap: () async {
+                                        final DateTime? picked =
+                                            await showDatePicker(
+                                          context: context,
+                                          initialDate:
+                                              selectedDate ?? DateTime.now(),
+                                          firstDate: DateTime(2020),
+                                          lastDate: DateTime(2030),
+                                        );
+                                        if (picked != null &&
+                                            picked != selectedDate) {
+                                          setState(() {
+                                            selectedDate = picked;
+                                          });
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              _LabeledField(
+                                controller: locationController,
+                                label: 'Location',
+                                icon: Icons.place_outlined,
+                              ),
+                              _LabeledField(
+                                controller: inspectedByController,
+                                label: 'Inspected By',
+                                icon: Icons.person_outline,
+                              ),
+                              _LabeledField(
+                                controller: aircraftController,
+                                label: 'Aircraft',
+                                icon: Icons.flight_outlined,
+                              ),
+                              _LabeledField(
+                                controller: detailedInspectionController,
+                                label: 'Detailed Inspection',
+                                maxLines: 3,
+                                icon: Icons.description_outlined,
+                              ),
+                              _LabeledField(
+                                controller: reportedIssueController,
+                                label: 'Reported Issue',
+                                maxLines: 3,
+                                icon: Icons.report_problem_outlined,
+                              ),
+                              _LabeledField(
+                                controller: actionTakenController,
+                                label: 'Action Taken',
+                                maxLines: 3,
+                                icon: Icons.task_alt_outlined,
+                              ),
+                              // Image picker
+                              if (selectedImage != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Selected Image',
+                                        style: TextStyle(
+                                          color: Colors.black.withOpacity(0.8),
+                                          fontSize: 14,
+                                          fontFamily: 'Medium',
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Container(
+                                        height: 100,
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                          border: Border.all(
+                                              color: Colors.black
+                                                  .withOpacity(0.2)),
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                          child: Image.file(
+                                            selectedImage!,
+                                            fit: BoxFit.cover,
+                                            width: double.infinity,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                        onPressed: () {
-                          Navigator.of(dialogContext).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text(
-                                  'Maintenance log saved (placeholder).'),
-                              behavior: SnackBarBehavior.floating,
-                              backgroundColor: app_colors.secondary,
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: app_colors.secondary,
+                            foregroundColor: Colors.black,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
                             ),
-                          );
-                        },
-                        child: const Text(
-                          'Save',
-                          style: TextStyle(fontFamily: 'Bold'),
+                          ),
+                          onPressed: () async {
+                            final ImagePicker picker = ImagePicker();
+                            final XFile? image = await picker.pickImage(
+                                source: ImageSource.gallery);
+                            if (image != null) {
+                              setState(() {
+                                selectedImage = File(image.path);
+                              });
+                            }
+                          },
+                          icon: const Icon(Icons.attach_file_rounded),
+                          label: const Text(
+                            'Attach Photo',
+                            style: TextStyle(fontFamily: 'Bold'),
+                          ),
                         ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                            child: const Text(
+                              'Cancel',
+                              style: TextStyle(fontFamily: 'Bold'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: app_colors.secondary,
+                              foregroundColor: Colors.black,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            onPressed: _saveLog,
+                            child: const Text(
+                              'Save',
+                              style: TextStyle(fontFamily: 'Bold'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
@@ -393,7 +650,14 @@ class _LabeledField extends StatelessWidget {
   final String label;
   final int maxLines;
   final IconData? icon;
-  const _LabeledField({required this.label, this.maxLines = 1, this.icon});
+  final TextEditingController? controller;
+
+  const _LabeledField({
+    required this.label,
+    this.maxLines = 1,
+    this.icon,
+    this.controller,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -412,6 +676,7 @@ class _LabeledField extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           TextField(
+            controller: controller,
             maxLines: maxLines,
             style: const TextStyle(fontFamily: 'Regular', fontSize: 14),
             decoration: InputDecoration(
