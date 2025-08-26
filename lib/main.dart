@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:skycypher/firebase_options.dart';
 import 'package:skycypher/widgets/auth_wrapper.dart';
 import 'package:skycypher/utils/colors.dart' as app_colors;
+import 'package:skycypher/services/aircraft_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -10,6 +11,9 @@ void main() async {
     name: 'skycypher-d55ee',
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Initialize default aircraft data
+  await AircraftService.initializeDefaultAircraft();
 
   runApp(const MyApp());
 }
