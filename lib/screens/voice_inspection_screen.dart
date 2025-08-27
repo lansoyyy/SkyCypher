@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:skycypher/utils/colors.dart' as app_colors;
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 class VoiceInspectionScreen extends StatefulWidget {
   final String aircraftModel;
@@ -23,7 +24,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   late AnimationController _waveController;
   late Animation<double> _pulseAnimation;
   late Animation<double> _waveAnimation;
-
+  
+  // Speech to text implementation
+  late stt.SpeechToText _speech;
   bool _isListening = false;
   bool _isProcessing = false;
   String _currentCommand = '';
@@ -66,6 +69,10 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   @override
   void initState() {
     super.initState();
+    
+    // Initialize speech to text
+    _speech = stt.SpeechToText();
+    _initializeSpeechRecognition();
 
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1500),
@@ -93,6 +100,43 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       curve: Curves.easeInOut,
     ));
   }
+  
+  Future<void> _initializeSpeechRecognition() async {
+    try {
+      bool available = await _speech.initialize(
+        onError: (error) => _onSpeechError(error),
+        onStatus: (status) => _onSpeechStatus(status),
+      );
+      
+      if (available) {
+        setState(() {
+          _lastRecognizedText = 'Ready to listen. Say "Start inspection" to begin';
+        });
+      } else {
+        setState(() {
+          _lastRecognizedText = 'Speech recognition not available';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _lastRecognizedText = 'Error initializing speech recognition: $e';
+      });
+    }
+  }
+  
+  void _onSpeechError(dynamic error) {
+    setState(() {
+      _lastRecognizedText = 'Speech recognition error: $error';
+      _isListening = false;
+      _isProcessing = false;
+    });
+    _pulseController.stop();
+    _waveController.stop();
+  }
+  
+  void _onSpeechStatus(String status) {
+    // Handle speech recognition status changes if needed
+  }
 
   @override
   void dispose() {
@@ -101,7 +145,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     super.dispose();
   }
 
-  void _startListening() {
+  void _startListening() async {
+    if (_isListening || !_speech.isAvailable) return;
+    
     setState(() {
       _isListening = true;
       _currentCommand = '';
@@ -112,52 +158,39 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     _pulseController.repeat(reverse: true);
     _waveController.repeat();
 
-    // Simulate voice recognition
-    _simulateVoiceRecognition();
+    // Start listening for speech
+    _speech.listen(
+      onResult: (result) {
+        setState(() {
+          _currentCommand = result.recognizedWords;
+          _lastRecognizedText = 'Recognized: "$_currentCommand"';
+        });
+        
+        // Process the command immediately
+        _processCommand(_currentCommand);
+      },
+    );
   }
 
   void _stopListening() {
+    if (!_isListening) return;
+    
     setState(() {
       _isListening = false;
       _isProcessing = true;
     });
 
+    _speech.stop();
     _pulseController.stop();
     _waveController.stop();
 
-    // Simulate processing
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted) {
-        setState(() {
-          _isProcessing = false;
-          _lastRecognizedText = _currentCommand.isEmpty
-              ? 'No command recognized. Try again.'
-              : 'Command processed: $_currentCommand';
-        });
-        _processCommand(_currentCommand);
-      }
-    });
-  }
-
-  void _simulateVoiceRecognition() {
-    final commands = [
-      'Start inspection',
-      'Exterior check complete',
-      'Engine inspection done',
-      'Cockpit systems good',
-      'Tires and landing gear OK',
-      'Fuel system checked',
-      'Complete inspection',
-    ];
-
-    Future.delayed(const Duration(milliseconds: 2000), () {
-      if (_isListening && mounted) {
-        setState(() {
-          _currentCommand =
-              commands[DateTime.now().millisecond % commands.length];
-          _lastRecognizedText = 'Recognized: "$_currentCommand"';
-        });
-      }
+    // Process any final command
+    if (_currentCommand.isNotEmpty) {
+      _processCommand(_currentCommand);
+    }
+    
+    setState(() {
+      _isProcessing = false;
     });
   }
 
@@ -481,7 +514,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
 
                 Text(
                   _isListening
-                      ? 'Hold to speak, release to process'
+                      ? 'Listening... Release to process'
                       : 'Press and hold the microphone to give voice commands',
                   textAlign: TextAlign.center,
                   style: TextStyle(
