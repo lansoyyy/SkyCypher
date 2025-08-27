@@ -279,7 +279,6 @@ class _LoginScreenState extends State<LoginScreen>
           focusNode: _emailFocus,
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
-          onFieldSubmitted: (_) => _passwordFocus.requestFocus(),
           style: const TextStyle(
             color: Colors.white,
             fontSize: 16,
@@ -320,7 +319,6 @@ class _LoginScreenState extends State<LoginScreen>
           focusNode: _passwordFocus,
           obscureText: _obscure,
           textInputAction: TextInputAction.done,
-          onFieldSubmitted: (_) => _onLogin(),
           style: const TextStyle(
             color: Colors.white,
             fontSize: 16,

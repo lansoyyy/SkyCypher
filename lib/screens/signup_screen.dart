@@ -332,7 +332,6 @@ class _SignUpScreenState extends State<SignUpScreen>
           focusNode: _emailFocus,
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
-          onFieldSubmitted: (_) => _passwordFocus.requestFocus(),
           style: const TextStyle(
             color: Colors.white,
             fontSize: 16,
@@ -373,7 +372,6 @@ class _SignUpScreenState extends State<SignUpScreen>
           focusNode: _passwordFocus,
           obscureText: _obscurePassword,
           textInputAction: TextInputAction.next,
-          onFieldSubmitted: (_) => _confirmPasswordFocus.requestFocus(),
           style: const TextStyle(
             color: Colors.white,
             fontSize: 16,
@@ -424,7 +422,6 @@ class _SignUpScreenState extends State<SignUpScreen>
           focusNode: _confirmPasswordFocus,
           obscureText: _obscureConfirmPassword,
           textInputAction: TextInputAction.done,
-          onFieldSubmitted: (_) => _onSignUp(),
           style: const TextStyle(
             color: Colors.white,
             fontSize: 16,
