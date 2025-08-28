@@ -158,7 +158,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  void _showVoiceAssistantDialog() {
+  void _showVoiceAssistantDialog() async {
+    // Ensure the voice assistant is initialized before showing the dialog
+    if (!_voiceAssistantManager.isInitialized) {
+      // Show a loading state or message while initializing
+      // For now, we'll just try to initialize and then show the dialog
+      try {
+        bool initialized = await _voiceAssistantManager.initialize();
+        if (!initialized) {
+          // Handle initialization failure
+          print('Failed to initialize voice assistant');
+          return;
+        }
+      } catch (e) {
+        print('Error initializing voice assistant: $e');
+        return;
+      }
+    }
+
     _voiceAssistantManager.showDialog(context);
   }
 

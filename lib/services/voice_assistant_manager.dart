@@ -5,19 +5,21 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:skycypher/screens/voice_inspection_screen.dart';
 
 class VoiceAssistantManager {
-  static final VoiceAssistantManager _instance = VoiceAssistantManager._internal();
+  static final VoiceAssistantManager _instance =
+      VoiceAssistantManager._internal();
   factory VoiceAssistantManager() => _instance;
   VoiceAssistantManager._internal();
 
   stt.SpeechToText? _speech;
   bool _isListening = false;
   bool _isProcessing = false;
+  bool _isInitialized = false;
   String _recognizedText = '';
-  String _statusMessage = 'Ready to listen';
+  String _statusMessage = 'Initializing...';
   BuildContext? _dialogContext;
   OverlayEntry? _overlayEntry;
   final List<VoiceCommand> _commandHistory = [];
-  
+
   // Aircraft selection state
   bool _isSelectingAircraft = false;
   bool _isEnteringRpNumber = false;
@@ -26,6 +28,7 @@ class VoiceAssistantManager {
 
   bool get isListening => _isListening;
   bool get isProcessing => _isProcessing;
+  bool get isInitialized => _isInitialized;
   String get recognizedText => _recognizedText;
   String get statusMessage => _statusMessage;
   List<VoiceCommand> get commandHistory => List.unmodifiable(_commandHistory);
@@ -67,16 +70,43 @@ class VoiceAssistantManager {
   /// Initialize speech recognition
   Future<bool> initialize() async {
     _speech = stt.SpeechToText();
-    bool available = await _speech!.initialize(
-      onError: (error) => _onSpeechError(error),
-      onStatus: (status) => _onSpeechStatus(status),
-    );
-    return available;
+    try {
+      bool available = await _speech!.initialize(
+        onError: (error) => _onSpeechError(error),
+        onStatus: (status) => _onSpeechStatus(status),
+      );
+      _isInitialized = available;
+      _statusMessage =
+          available ? 'Ready to listen' : 'Speech service not available';
+      _updateDialogState();
+      return available;
+    } catch (e) {
+      _isInitialized = false;
+      _statusMessage = 'Initialization failed: $e';
+      _updateDialogState();
+      return false;
+    }
   }
 
   /// Start listening for speech
   void listen() async {
-    if (_isListening || _speech == null) return;
+    if (_isListening || _speech == null || !_isInitialized) {
+      // If not initialized, try to initialize first
+      if (!_isInitialized) {
+        _statusMessage = 'Initializing speech service...';
+        _updateDialogState();
+
+        bool initialized = await initialize();
+        if (!initialized) {
+          _statusMessage = 'Failed to initialize speech service';
+          _updateDialogState();
+          return;
+        }
+      }
+
+      // If still not ready, return
+      if (!_isInitialized) return;
+    }
 
     _isListening = true;
     _statusMessage = 'Listening...';
@@ -108,7 +138,7 @@ class VoiceAssistantManager {
   /// Process recognized command
   void _processCommand(String command) {
     final lowerCommand = command.toLowerCase();
-    
+
     // Add to command history
     _commandHistory.add(VoiceCommand(
       text: command,
@@ -121,7 +151,7 @@ class VoiceAssistantManager {
       _handleAircraftSelection(command);
       return;
     }
-    
+
     // Handle RP number entry flow
     if (_isEnteringRpNumber) {
       _handleRpNumberEntry(command);
@@ -145,7 +175,7 @@ class VoiceAssistantManager {
   /// Handle aircraft selection
   void _handleAircraftSelection(String command) {
     final lowerCommand = command.toLowerCase();
-    
+
     if (lowerCommand.contains('cessna 152')) {
       _selectedAircraft = 'Cessna 152';
       _isSelectingAircraft = false;
@@ -166,7 +196,7 @@ class VoiceAssistantManager {
     // For simplicity, we'll use the recognized text as the RP number
     _rpNumber = command.toUpperCase();
     _isEnteringRpNumber = false;
-    
+
     // Navigate to voice inspection screen with selected aircraft and RP number
     _navigateToVoiceInspection();
   }
@@ -177,7 +207,7 @@ class VoiceAssistantManager {
 
     // Dismiss the voice assistant dialog before navigating
     _dismissDialog();
-    
+
     // Navigate to voice inspection screen
     Navigator.push(
       _dialogContext!,
@@ -234,7 +264,7 @@ class VoiceCommand {
   final String text;
   final double confidence;
   final DateTime timestamp;
-  
+
   VoiceCommand({
     required this.text,
     required this.confidence,
@@ -256,7 +286,8 @@ class VoiceAssistantDialog extends StatefulWidget {
   State<VoiceAssistantDialog> createState() => _VoiceAssistantDialogState();
 }
 
-class _VoiceAssistantDialogState extends State<VoiceAssistantDialog> with TickerProviderStateMixin {
+class _VoiceAssistantDialogState extends State<VoiceAssistantDialog>
+    with TickerProviderStateMixin {
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
@@ -274,11 +305,15 @@ class _VoiceAssistantDialogState extends State<VoiceAssistantDialog> with Ticker
       parent: _pulseController,
       curve: Curves.easeInOut,
     ));
-    
+
     _pulseController.repeat(reverse: true);
-    
-    // Start listening immediately when dialog opens for hands-free operation
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+
+    // Initialize and start listening when dialog opens
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Ensure the manager is initialized before listening
+      if (!widget.manager.isInitialized) {
+        await widget.manager.initialize();
+      }
       widget.manager.listen();
     });
   }
@@ -348,28 +383,28 @@ class _VoiceAssistantDialogState extends State<VoiceAssistantDialog> with Ticker
                         ),
                       ],
                     ),
-                    
+
                     const SizedBox(height: 20),
-                    
+
                     // Microphone button with animation (now just for visual feedback)
                     Container(
                       width: 100,
                       height: 100,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: widget.manager.isListening 
-                            ? Colors.blue.withOpacity(0.8) 
+                        color: widget.manager.isListening
+                            ? Colors.blue.withOpacity(0.8)
                             : Colors.blue,
                         boxShadow: [
                           BoxShadow(
-                            color: widget.manager.isListening 
-                                ? Colors.blue.withOpacity(0.5) 
+                            color: widget.manager.isListening
+                                ? Colors.blue.withOpacity(0.5)
                                 : Colors.blue.withOpacity(0.3),
-                            blurRadius: widget.manager.isListening 
-                                ? 20 * _pulseAnimation.value 
+                            blurRadius: widget.manager.isListening
+                                ? 20 * _pulseAnimation.value
                                 : 15,
-                            spreadRadius: widget.manager.isListening 
-                                ? 5 * _pulseAnimation.value 
+                            spreadRadius: widget.manager.isListening
+                                ? 5 * _pulseAnimation.value
                                 : 3,
                           ),
                         ],
@@ -379,26 +414,29 @@ class _VoiceAssistantDialogState extends State<VoiceAssistantDialog> with Ticker
                         ),
                       ),
                       child: Transform.scale(
-                        scale: widget.manager.isListening 
-                            ? _pulseAnimation.value 
+                        scale: widget.manager.isListening
+                            ? _pulseAnimation.value
                             : 1.0,
                         child: Icon(
-                          widget.manager.isListening 
-                              ? Icons.mic 
-                              : widget.manager.isProcessing 
-                                  ? Icons.hourglass_empty 
-                                  : Icons.mic_none,
+                          widget.manager.isListening
+                              ? Icons.mic
+                              : widget.manager.isProcessing
+                                  ? Icons.hourglass_empty
+                                  : widget.manager.isInitialized
+                                      ? Icons.mic_none
+                                      : Icons.hourglass_bottom,
                           size: 48,
                           color: Colors.white,
                         ),
                       ),
                     ),
-                    
+
                     const SizedBox(height: 20),
-                    
+
                     // Status message
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(16),
@@ -417,9 +455,9 @@ class _VoiceAssistantDialogState extends State<VoiceAssistantDialog> with Ticker
                         ),
                       ),
                     ),
-                    
+
                     const SizedBox(height: 10),
-                    
+
                     // Recognized text
                     if (widget.manager.recognizedText.isNotEmpty) ...[
                       Container(
@@ -443,7 +481,7 @@ class _VoiceAssistantDialogState extends State<VoiceAssistantDialog> with Ticker
                       ),
                       const SizedBox(height: 10),
                     ],
-                    
+
                     // Instructions based on current state
                     Text(
                       _getInstructions(),
@@ -463,9 +501,11 @@ class _VoiceAssistantDialogState extends State<VoiceAssistantDialog> with Ticker
       ),
     );
   }
-  
+
   String _getInstructions() {
-    if (widget.manager.isSelectingAircraft) {
+    if (!widget.manager.isInitialized) {
+      return 'Initializing speech service...';
+    } else if (widget.manager.isSelectingAircraft) {
       return 'Say "Cessna 152" or "Cessna 150"';
     } else if (widget.manager.isEnteringRpNumber) {
       return 'Please say the RP number';
