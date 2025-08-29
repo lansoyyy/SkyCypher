@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:skycypher/utils/colors.dart' as app_colors;
 import 'package:skycypher/screens/voice_inspection_screen.dart';
+import 'package:skycypher/models/aircraft.dart';
+import 'package:skycypher/services/aircraft_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AircraftSelectionScreen extends StatefulWidget {
   const AircraftSelectionScreen({super.key});
@@ -13,12 +16,80 @@ class AircraftSelectionScreen extends StatefulWidget {
 class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
   final TextEditingController _rpController = TextEditingController();
 
-  final List<String> _models = const ['Cessna 152', 'Cessna 150'];
-
-  String _selectedModel = 'Cessna 152';
+  // Track loading state
+  bool _isLoading = true;
+  // Store aircraft data
+  List<Aircraft> _aircraftList = [];
+  Aircraft? _selectedAircraft;
   String? _rpNumber;
 
-  bool get _isSelectedAvailable => _selectedModel != 'Cessna 150';
+  @override
+  void initState() {
+    super.initState();
+    // Initialize default aircraft data in Firestore if needed
+    _initializeAircraft();
+  }
+
+  // Initialize aircraft data
+  Future<void> _initializeAircraft() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      // Initialize default aircraft if they don't exist
+      await AircraftService.initializeDefaultAircraft();
+
+      // Fetch aircraft data
+      await _fetchAircraft();
+    } catch (e) {
+      print('Error initializing aircraft: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Fetch aircraft data from Firestore
+  Future<void> _fetchAircraft() async {
+    try {
+      QuerySnapshot snapshot =
+          await FirebaseFirestore.instance.collection('aircraft').get();
+
+      List<Aircraft> aircraftList = [];
+      for (var doc in snapshot.docs) {
+        aircraftList.add(
+            Aircraft.fromDocument(doc.data() as Map<String, dynamic>, doc.id));
+      }
+
+      setState(() {
+        _aircraftList = aircraftList;
+        // Select the first available aircraft by default, or the first aircraft if none are available
+      });
+    } catch (e) {
+      print('Error fetching aircraft: $e');
+    }
+  }
+
+  // Select an aircraft
+  void _selectAircraft(Aircraft aircraft) {
+    setState(() {
+      _selectedAircraft = aircraft;
+
+      // If the aircraft has an RP number in the database, use it
+      if (aircraft.rpNumber?.isNotEmpty == true) {
+        _rpNumber = aircraft.rpNumber;
+      }
+      // If not and we don't have an RP number set yet, prompt for it
+      else if (_rpNumber?.isEmpty ?? true) {
+        // Schedule the prompt after the current frame
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _promptRP(context, aircraft);
+        });
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -114,7 +185,7 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
                   const SizedBox(height: 8),
                   Center(
                     child: Text(
-                      'Select a model and enter RP to begin.',
+                      'Select an aircraft and enter RP to begin.',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.85),
                         fontSize: 12,
@@ -124,90 +195,18 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Dropdown like selector
-                  _SelectionBar(
-                    value: _selectedModel,
-                    onChanged: (v) => setState(() => _selectedModel = v),
-                    options: _models,
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Model cards
-                  _AircraftCard(
-                    title: 'Cessna 152',
-                    assetPath: 'assets/images/Cessna 152.png',
-                    available: true,
-                    onEnterRP: () => _promptRP(context, 'Cessna 152'),
-                  ),
-                  const SizedBox(height: 10),
-                  _AircraftCard(
-                    title: 'Cessna 150 (NOT AVAILABLE)',
-                    assetPath: 'assets/images/Cessna 150.png',
-                    available: false,
-                    onEnterRP: () => _promptRP(context, 'Cessna 150'),
-                  ),
-
-                  const Spacer(),
-
-                  // Start button
-                  SizedBox(
-                    height: 54,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _lighten(app_colors.secondary, .12),
-                        foregroundColor: Colors.black,
-                        elevation: 6,
-                        shadowColor: Colors.black.withOpacity(0.25),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          side:
-                              BorderSide(color: Colors.white.withOpacity(0.18)),
+                  // Loading indicator or content
+                  _isLoading
+                      ? const Expanded(
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                            ),
+                          ),
+                        )
+                      : Expanded(
+                          child: _buildAircraftContent(),
                         ),
-                      ),
-                      onPressed: (_isSelectedAvailable &&
-                              (_rpNumber?.isNotEmpty ?? false))
-                          ? () {
-                              Navigator.of(context).push(
-                                PageRouteBuilder(
-                                  pageBuilder: (context, animation,
-                                          secondaryAnimation) =>
-                                      VoiceInspectionScreen(
-                                    aircraftModel: _selectedModel,
-                                    rpNumber: _rpNumber!,
-                                  ),
-                                  transitionsBuilder: (context, animation,
-                                      secondaryAnimation, child) {
-                                    return FadeTransition(
-                                      opacity: animation,
-                                      child: SlideTransition(
-                                        position: Tween<Offset>(
-                                          begin: const Offset(1.0, 0.0),
-                                          end: Offset.zero,
-                                        ).animate(CurvedAnimation(
-                                          parent: animation,
-                                          curve: Curves.easeInOut,
-                                        )),
-                                        child: child,
-                                      ),
-                                    );
-                                  },
-                                  transitionDuration:
-                                      const Duration(milliseconds: 400),
-                                ),
-                              );
-                            }
-                          : null,
-                      child: const Text(
-                        'START INSPECTION',
-                        style: TextStyle(
-                          fontFamily: 'Bold',
-                          fontSize: 16,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -217,8 +216,178 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
     );
   }
 
-  Future<void> _promptRP(BuildContext context, String model) async {
-    _rpController.text = _rpNumber ?? '';
+  Widget _buildAircraftContent() {
+    if (_aircraftList.isEmpty) {
+      return Center(
+        child: Text(
+          'No aircraft available.',
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.85),
+            fontSize: 16,
+          ),
+        ),
+      );
+    }
+
+    // Check if START INSPECTION button should be shown
+    final bool canStartInspection = _selectedAircraft?.isAvailable == true &&
+        (_rpNumber?.isNotEmpty ?? false);
+
+    return Column(
+      children: [
+        // Header for aircraft list
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: _lighten(app_colors.secondary, .06),
+            border: Border.all(color: Colors.white.withOpacity(0.18), width: 1),
+          ),
+          child: Row(
+            children: [
+              const Text(
+                'Available Aircraft',
+                style: TextStyle(
+                    color: Colors.black, fontFamily: 'Bold', fontSize: 18),
+              ),
+              const Spacer(),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${_aircraftList.where((a) => a.isAvailable).length}/${_aircraftList.length}',
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontFamily: 'Bold',
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // Model cards
+        Expanded(
+          child: ListView.builder(
+            itemCount: _aircraftList.length,
+            itemBuilder: (context, index) {
+              final aircraft = _aircraftList[index];
+              final isSelected = _selectedAircraft?.id == aircraft.id;
+
+              return GestureDetector(
+                onTap: aircraft.isAvailable
+                    ? () {
+                        _selectAircraft(aircraft);
+                      }
+                    : null,
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected
+                          ? app_colors.secondary
+                          : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                  child: Stack(
+                    children: [
+                      _AircraftCard(
+                        title: aircraft.name,
+                        assetPath: 'assets/images/${aircraft.name}.png',
+                        available: aircraft.isAvailable,
+                        status: aircraft.status,
+                        rpNumber: aircraft.rpNumber ?? '',
+                        isSelected: isSelected,
+                        onEnterRP: () => _promptRP(context, aircraft),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+
+        const SizedBox(height: 10),
+
+        // Start button - make it always visible but conditionally enabled
+        SizedBox(
+          height: 54,
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _lighten(app_colors.secondary, .12),
+              foregroundColor: Colors.black,
+              elevation: 6,
+              shadowColor: Colors.black.withOpacity(0.25),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(color: Colors.white.withOpacity(0.18)),
+              ),
+            ),
+            onPressed: canStartInspection
+                ? () {
+                    Navigator.of(context).push(
+                      PageRouteBuilder(
+                        pageBuilder: (context, animation, secondaryAnimation) =>
+                            VoiceInspectionScreen(
+                          aircraftModel: _selectedAircraft!.name,
+                          rpNumber: _rpNumber!,
+                        ),
+                        transitionsBuilder:
+                            (context, animation, secondaryAnimation, child) {
+                          return FadeTransition(
+                            opacity: animation,
+                            child: SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(1.0, 0.0),
+                                end: Offset.zero,
+                              ).animate(CurvedAnimation(
+                                parent: animation,
+                                curve: Curves.easeInOut,
+                              )),
+                              child: child,
+                            ),
+                          );
+                        },
+                        transitionDuration: const Duration(milliseconds: 400),
+                      ),
+                    );
+                  }
+                : null,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'START INSPECTION',
+                  style: TextStyle(
+                    fontFamily: 'Bold',
+                    fontSize: 16,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _promptRP(BuildContext context, Aircraft aircraft) async {
+    // Set a default RP number if it's empty in the database
+    _rpController.text = aircraft.rpNumber?.isNotEmpty == true
+        ? aircraft.rpNumber!
+        : _rpNumber ?? '';
+
     await showDialog(
       context: context,
       builder: (ctx) {
@@ -268,8 +437,13 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
               ),
               onPressed: () {
                 setState(() {
-                  _selectedModel = model;
+                  _selectedAircraft = aircraft;
                   _rpNumber = _rpController.text.trim();
+
+                  // If RP is empty, set a default value to enable the button
+                  if (_rpNumber?.isEmpty ?? true) {
+                    _rpNumber = 'RP-${aircraft.name.replaceAll(' ', '')}';
+                  }
                 });
                 Navigator.of(ctx).pop();
               },
@@ -282,77 +456,23 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
   }
 }
 
-class _SelectionBar extends StatelessWidget {
-  final String value;
-  final List<String> options;
-  final ValueChanged<String> onChanged;
-
-  const _SelectionBar({
-    required this.value,
-    required this.options,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        color: _lighten(app_colors.secondary, .06),
-        border: Border.all(color: Colors.white.withOpacity(0.18), width: 1),
-      ),
-      child: Row(
-        children: [
-          const Text(
-            'Aircraft Selection',
-            style: TextStyle(
-                color: Colors.black, fontFamily: 'Bold', fontSize: 18),
-          ),
-          const Spacer(),
-          DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: value,
-              icon: const Icon(Icons.arrow_drop_down, color: Colors.black),
-              dropdownColor: _lighten(app_colors.secondary, .12),
-              style:
-                  const TextStyle(color: Colors.black, fontFamily: 'Regular'),
-              items: options
-                  .map(
-                    (e) => DropdownMenuItem<String>(
-                      value: e,
-                      child: Text(
-                        e,
-                        style: const TextStyle(
-                            fontSize: 16,
-                            color: Colors.black,
-                            fontFamily: 'Bold'),
-                      ),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (v) {
-                if (v != null) onChanged(v);
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _AircraftCard extends StatelessWidget {
   final String title;
   final String assetPath;
   final bool available;
+  final String status;
+  final String rpNumber;
+  final bool isSelected;
   final VoidCallback onEnterRP;
 
   const _AircraftCard({
     required this.title,
     required this.assetPath,
     required this.available,
+    required this.status,
+    required this.rpNumber,
     required this.onEnterRP,
+    this.isSelected = false,
   });
 
   @override
@@ -365,7 +485,8 @@ class _AircraftCard extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.black.withOpacity(0.1)),
-          color: Colors.white,
+          color:
+              isSelected ? _lighten(app_colors.secondary, 0.35) : Colors.white,
         ),
         padding: const EdgeInsets.all(10),
         child: Row(
@@ -424,7 +545,7 @@ class _AircraftCard extends StatelessWidget {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              available ? 'Available' : 'Not Available',
+                              status,
                               style: TextStyle(
                                 color: available
                                     ? Colors.green.shade800
@@ -438,6 +559,17 @@ class _AircraftCard extends StatelessWidget {
                       ),
                     ],
                   ),
+                  if (rpNumber.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'RP: $rpNumber',
+                      style: TextStyle(
+                        color: Colors.black.withOpacity(0.7),
+                        fontSize: 13,
+                        fontFamily: 'Medium',
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 6),
                   Align(
                     alignment: Alignment.centerLeft,
@@ -455,10 +587,12 @@ class _AircraftCard extends StatelessWidget {
                         ),
                       ),
                       onPressed: available ? onEnterRP : null,
-                      child: const Text(
-                        'Enter Aircraft RP Number',
+                      child: Text(
+                        rpNumber.isEmpty
+                            ? 'No Aircraft RP Number'
+                            : 'Change RP Number',
                         textAlign: TextAlign.center,
-                        style: TextStyle(
+                        style: const TextStyle(
                             fontFamily: 'Medium', fontSize: 12, height: 1.1),
                       ),
                     ),
