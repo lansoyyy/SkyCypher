@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:skycypher/utils/colors.dart' as app_colors;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:skycypher/services/auth_service.dart';
 
 class VoiceInspectionScreen extends StatefulWidget {
   final String aircraftModel;
@@ -24,52 +25,36 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   late AnimationController _waveController;
   late Animation<double> _pulseAnimation;
   late Animation<double> _waveAnimation;
-  
+
   // Speech to text implementation
   late stt.SpeechToText _speech;
   bool _isListening = false;
   bool _isProcessing = false;
   String _currentCommand = '';
-  String _lastRecognizedText = 'Say "Start inspection" to begin';
+  String _lastRecognizedText = 'Initializing...';
+  String? _userType;
 
-  // Inspection checklist
-  final List<InspectionItem> _inspectionItems = [
-    InspectionItem(
-      id: 'exterior',
-      title: 'Exterior Inspection',
-      description: 'Check fuselage, wings, and control surfaces',
-      commands: ['exterior check', 'check exterior', 'fuselage inspection'],
-    ),
-    InspectionItem(
-      id: 'engine',
-      title: 'Engine Inspection',
-      description: 'Check engine oil, fuel, and components',
-      commands: ['engine check', 'check engine', 'engine inspection'],
-    ),
-    InspectionItem(
-      id: 'cockpit',
-      title: 'Cockpit Inspection',
-      description: 'Check instruments, controls, and electrical systems',
-      commands: ['cockpit check', 'check cockpit', 'cockpit inspection'],
-    ),
-    InspectionItem(
-      id: 'tires',
-      title: 'Landing Gear & Tires',
-      description: 'Check tires, brakes, and landing gear',
-      commands: ['tire check', 'check tires', 'landing gear inspection'],
-    ),
-    InspectionItem(
-      id: 'fuel',
-      title: 'Fuel System',
-      description: 'Check fuel quantity, quality, and leaks',
-      commands: ['fuel check', 'check fuel', 'fuel inspection'],
-    ),
-  ];
+  // Inspection checklists for different user types
+  List<InspectionItem> _pilotInspectionItems = [];
+  List<InspectionItem> _mechanicInspectionItems = [];
+
+  // Get the current inspection items based on user type
+  List<InspectionItem> get _currentInspectionItems {
+    if (_userType == 'Mechanic') {
+      return _mechanicInspectionItems;
+    } else {
+      // Default to pilot items for Pilot user type or if user type is not set
+      return _pilotInspectionItems;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    
+
+    // Fetch user data to determine user type
+    _fetchUserData();
+
     // Initialize speech to text
     _speech = stt.SpeechToText();
     _initializeSpeechRecognition();
@@ -100,18 +85,158 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       curve: Curves.easeInOut,
     ));
   }
-  
+
+  Future<void> _fetchUserData() async {
+    try {
+      final userData = await AuthService.getUserData();
+      if (userData != null && userData['userType'] != null) {
+        setState(() {
+          _userType = userData['userType'] as String;
+        });
+      }
+      // Initialize inspection items after user type is determined
+      _initializeInspectionItems();
+    } catch (e) {
+      print('Error fetching user data: $e');
+      // Initialize with default items if user data fetch fails
+      _initializeInspectionItems();
+    }
+  }
+
+  void _initializeInspectionItems() {
+    // Pilot inspection items (number 1 in your PDF)
+    _pilotInspectionItems = [
+      InspectionItem(
+        id: 'exterior_left_wing',
+        title: 'Left Wing / Fuselage Inspection',
+        description:
+            'Fuel tank quality, sump drain, leading edge, aileron, flap, tire, brake',
+        commands: [
+          'left wing inspection',
+          'check left wing',
+          'inspect left wing'
+        ],
+      ),
+      InspectionItem(
+        id: 'fuselage_tail',
+        title: 'Fuselage / Tail Inspection',
+        description:
+            'Fuselage surface, stabilizer, elevator, rudder, tail tie-down',
+        commands: [
+          'fuselage inspection',
+          'check fuselage',
+          'inspect fuselage and tail'
+        ],
+      ),
+      InspectionItem(
+        id: 'nose_section',
+        title: 'Nose Section Inspection',
+        description:
+            'Windshield, oil level, belly sump, propeller, spinner, static port',
+        commands: ['nose inspection', 'check nose section', 'inspect nose'],
+      ),
+      InspectionItem(
+        id: 'right_wing',
+        title: 'Right Wing / Fuselage Inspection',
+        description: 'Repeat inspections from left side',
+        commands: [
+          'right wing inspection',
+          'check right wing',
+          'inspect right wing'
+        ],
+      ),
+      InspectionItem(
+        id: 'final_walkaround',
+        title: 'Final Walk-Around Pass',
+        description: 'Panels, caps, chocks, covers secured',
+        commands: [
+          'final walkaround',
+          'final inspection',
+          'complete walkaround'
+        ],
+      ),
+      InspectionItem(
+        id: 'cockpit_before_start',
+        title: 'Cockpit / Before Start',
+        description:
+            'Seats, doors, avionics, master switch, flaps, control lock',
+        commands: ['cockpit check', 'check cockpit', 'cockpit inspection'],
+      ),
+    ];
+
+    // Mechanic inspection items (number 2 in your PDF)
+    _mechanicInspectionItems = [
+      InspectionItem(
+        id: 'airframe_structural',
+        title: 'Airframe / Structural Inspection',
+        description: 'Fuselage, wings, tail surfaces, rivets, skin integrity',
+        commands: ['airframe inspection', 'check airframe', 'inspect airframe'],
+      ),
+      InspectionItem(
+        id: 'cabin_cockpit',
+        title: 'Cabin / Cockpit Inspection',
+        description: 'Seats, safety belts, windows, flight controls',
+        commands: ['cabin inspection', 'check cabin', 'inspect cabin'],
+      ),
+      InspectionItem(
+        id: 'engine_nacelle',
+        title: 'Engine / Nacelle Inspection',
+        description: 'Leaks, mounting, cables, hoses, exhaust, cleanliness',
+        commands: ['engine inspection', 'check engine', 'inspect engine'],
+      ),
+      InspectionItem(
+        id: 'landing_gear',
+        title: 'Landing Gear / Wheels Inspection',
+        description: 'Gear assemblies, tires, brakes, shock strut',
+        commands: [
+          'landing gear inspection',
+          'check landing gear',
+          'inspect landing gear'
+        ],
+      ),
+      InspectionItem(
+        id: 'propeller_spinner',
+        title: 'Propeller / Spinner Inspection',
+        description: 'Blades, cracks, nicks, spinner, mounting bolts',
+        commands: [
+          'propeller inspection',
+          'check propeller',
+          'inspect propeller'
+        ],
+      ),
+      InspectionItem(
+        id: 'electrical_avionics',
+        title: 'Electrical / Avionics Inspection',
+        description: 'Wiring, conduits, antennas, secure installation',
+        commands: [
+          'electrical inspection',
+          'check electrical',
+          'inspect electrical'
+        ],
+      ),
+    ];
+  }
+
   Future<void> _initializeSpeechRecognition() async {
+    setState(() {
+      _lastRecognizedText = 'Initializing speech recognition...';
+    });
+
     try {
       bool available = await _speech.initialize(
         onError: (error) => _onSpeechError(error),
         onStatus: (status) => _onSpeechStatus(status),
       );
-      
+
       if (available) {
         setState(() {
-          _lastRecognizedText = 'Ready to listen. Say "Start inspection" to begin';
+          _lastRecognizedText = _userType != null
+              ? 'Ready to listen. Say commands for ${_userType!.toLowerCase()} inspection'
+              : 'Ready to listen. Say inspection commands';
         });
+
+        // Start listening automatically after initialization
+        _startListening();
       } else {
         setState(() {
           _lastRecognizedText = 'Speech recognition not available';
@@ -123,7 +248,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       });
     }
   }
-  
+
   void _onSpeechError(dynamic error) {
     setState(() {
       _lastRecognizedText = 'Speech recognition error: $error';
@@ -133,21 +258,22 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     _pulseController.stop();
     _waveController.stop();
   }
-  
+
   void _onSpeechStatus(String status) {
     // Handle speech recognition status changes if needed
   }
 
   @override
   void dispose() {
+    _stopListening(); // Stop listening when screen is disposed
     _pulseController.dispose();
     _waveController.dispose();
     super.dispose();
   }
 
   void _startListening() async {
-    if (_isListening || !_speech.isAvailable) return;
-    
+    if (_isListening) return;
+
     setState(() {
       _isListening = true;
       _currentCommand = '';
@@ -165,7 +291,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
           _currentCommand = result.recognizedWords;
           _lastRecognizedText = 'Recognized: "$_currentCommand"';
         });
-        
+
         // Process the command immediately
         _processCommand(_currentCommand);
       },
@@ -174,7 +300,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
 
   void _stopListening() {
     if (!_isListening) return;
-    
+
     setState(() {
       _isListening = false;
       _isProcessing = true;
@@ -188,7 +314,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     if (_currentCommand.isNotEmpty) {
       _processCommand(_currentCommand);
     }
-    
+
     setState(() {
       _isProcessing = false;
     });
@@ -197,7 +323,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   void _processCommand(String command) {
     final lowerCommand = command.toLowerCase();
 
-    for (var item in _inspectionItems) {
+    for (var item in _currentInspectionItems) {
       for (var cmd in item.commands) {
         if (lowerCommand.contains(cmd.toLowerCase())) {
           setState(() {
@@ -205,20 +331,24 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
             item.completedAt = DateTime.now();
           });
           HapticFeedback.lightImpact();
+          // Provide audio feedback
+          _lastRecognizedText = 'Completed: ${item.title}';
           break;
         }
       }
     }
 
-    if (lowerCommand.contains('complete') || lowerCommand.contains('finish')) {
+    if (lowerCommand.contains('complete') ||
+        lowerCommand.contains('finish') ||
+        lowerCommand.contains('inspection complete')) {
       _showCompletionDialog();
     }
   }
 
   void _showCompletionDialog() {
     final completedItems =
-        _inspectionItems.where((item) => item.isCompleted).length;
-    final totalItems = _inspectionItems.length;
+        _currentInspectionItems.where((item) => item.isCompleted).length;
+    final totalItems = _currentInspectionItems.length;
 
     showDialog(
       context: context,
@@ -238,6 +368,10 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
             ),
             Text(
               'RP Number: ${widget.rpNumber}',
+              style: TextStyle(color: Colors.white.withOpacity(0.9)),
+            ),
+            Text(
+              'User Type: ${_userType ?? "Unknown"}',
               style: TextStyle(color: Colors.white.withOpacity(0.9)),
             ),
             const SizedBox(height: 16),
@@ -342,7 +476,10 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
           Row(
             children: [
               GestureDetector(
-                onTap: () => Navigator.of(context).pop(),
+                onTap: () {
+                  _stopListening(); // Stop listening before navigating away
+                  Navigator.of(context).pop();
+                },
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
@@ -379,6 +516,16 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
                       fontSize: 14,
                     ),
                   ),
+                  if (_userType != null) ...[
+                    Text(
+                      '${_userType} Inspection',
+                      style: TextStyle(
+                        color: app_colors.secondary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ],
@@ -394,7 +541,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
           ),
           const SizedBox(height: 8),
           Text(
-            'Use voice commands to complete inspection checklist',
+            _userType != null
+                ? 'Hands-free ${_userType!.toLowerCase()} inspection in progress'
+                : 'Hands-free inspection in progress',
             style: TextStyle(
               color: Colors.white.withOpacity(0.8),
               fontSize: 16,
@@ -433,56 +582,49 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
             ),
             child: Column(
               children: [
-                // Voice button
-                GestureDetector(
-                  onTapDown: (_) => _startListening(),
-                  onTapUp: (_) => _stopListening(),
-                  onTapCancel: () => _stopListening(),
-                  child: AnimatedBuilder(
-                    animation:
-                        Listenable.merge([_pulseAnimation, _waveAnimation]),
-                    builder: (context, child) {
-                      return Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _isListening
-                              ? app_colors.secondary.withOpacity(0.8)
-                              : app_colors.secondary,
-                          boxShadow: _isListening
-                              ? [
-                                  BoxShadow(
-                                    color:
-                                        app_colors.secondary.withOpacity(0.4),
-                                    blurRadius: 20 * _pulseAnimation.value,
-                                    spreadRadius: 5 * _pulseAnimation.value,
-                                  ),
-                                ]
-                              : [
-                                  BoxShadow(
-                                    color:
-                                        app_colors.secondary.withOpacity(0.3),
-                                    blurRadius: 15,
-                                    offset: const Offset(0, 5),
-                                  ),
-                                ],
+                // Voice indicator (no button needed for hands-free)
+                AnimatedBuilder(
+                  animation:
+                      Listenable.merge([_pulseAnimation, _waveAnimation]),
+                  builder: (context, child) {
+                    return Container(
+                      width: 120,
+                      height: 120,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _isListening
+                            ? app_colors.secondary.withOpacity(0.8)
+                            : app_colors.secondary,
+                        boxShadow: _isListening
+                            ? [
+                                BoxShadow(
+                                  color: app_colors.secondary.withOpacity(0.4),
+                                  blurRadius: 20 * _pulseAnimation.value,
+                                  spreadRadius: 5 * _pulseAnimation.value,
+                                ),
+                              ]
+                            : [
+                                BoxShadow(
+                                  color: app_colors.secondary.withOpacity(0.3),
+                                  blurRadius: 15,
+                                  offset: const Offset(0, 5),
+                                ),
+                              ],
+                      ),
+                      child: Transform.scale(
+                        scale: _isListening ? _pulseAnimation.value : 1.0,
+                        child: Icon(
+                          _isListening
+                              ? Icons.mic
+                              : _isProcessing
+                                  ? Icons.hourglass_empty
+                                  : Icons.mic_none,
+                          size: 48,
+                          color: Colors.white,
                         ),
-                        child: Transform.scale(
-                          scale: _isListening ? _pulseAnimation.value : 1.0,
-                          child: Icon(
-                            _isListening
-                                ? Icons.mic
-                                : _isProcessing
-                                    ? Icons.hourglass_empty
-                                    : Icons.mic_none,
-                            size: 48,
-                            color: Colors.white,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
                 ),
 
                 const SizedBox(height: 24),
@@ -514,8 +656,8 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
 
                 Text(
                   _isListening
-                      ? 'Listening... Release to process'
-                      : 'Press and hold the microphone to give voice commands',
+                      ? 'Listening... Speak commands naturally'
+                      : 'Initializing hands-free inspection',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.7),
@@ -583,7 +725,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
                   ],
                 ),
                 const SizedBox(height: 20),
-                ...(_inspectionItems
+                ...(_currentInspectionItems
                     .map((item) => _buildChecklistItem(item))
                     .toList()),
               ],
@@ -595,8 +737,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   }
 
   Widget _buildProgressIndicator() {
-    final completed = _inspectionItems.where((item) => item.isCompleted).length;
-    final total = _inspectionItems.length;
+    final completed =
+        _currentInspectionItems.where((item) => item.isCompleted).length;
+    final total = _currentInspectionItems.length;
     final progress = total > 0 ? completed / total : 0.0;
 
     return Container(
