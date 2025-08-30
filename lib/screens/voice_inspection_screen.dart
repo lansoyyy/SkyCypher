@@ -104,7 +104,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   }
 
   void _initializeInspectionItems() {
-    // Pilot inspection items (number 1 in your PDF)
+    // Mechanic inspection items (number 1 & 2 in your PDF)
     _pilotInspectionItems = [
       InspectionItem(
         id: 'exterior_left_wing',
@@ -164,8 +164,63 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       ),
     ];
 
-    // Mechanic inspection items (number 2 in your PDF)
     _mechanicInspectionItems = [
+      InspectionItem(
+        id: 'exterior_left_wing',
+        title: 'Left Wing / Fuselage Inspection',
+        description:
+            'Fuel tank quality, sump drain, leading edge, aileron, flap, tire, brake',
+        commands: [
+          'left wing inspection',
+          'check left wing',
+          'inspect left wing'
+        ],
+      ),
+      InspectionItem(
+        id: 'fuselage_tail',
+        title: 'Fuselage / Tail Inspection',
+        description:
+            'Fuselage surface, stabilizer, elevator, rudder, tail tie-down',
+        commands: [
+          'fuselage inspection',
+          'check fuselage',
+          'inspect fuselage and tail'
+        ],
+      ),
+      InspectionItem(
+        id: 'nose_section',
+        title: 'Nose Section Inspection',
+        description:
+            'Windshield, oil level, belly sump, propeller, spinner, static port',
+        commands: ['nose inspection', 'check nose section', 'inspect nose'],
+      ),
+      InspectionItem(
+        id: 'right_wing',
+        title: 'Right Wing / Fuselage Inspection',
+        description: 'Repeat inspections from left side',
+        commands: [
+          'right wing inspection',
+          'check right wing',
+          'inspect right wing'
+        ],
+      ),
+      InspectionItem(
+        id: 'final_walkaround',
+        title: 'Final Walk-Around Pass',
+        description: 'Panels, caps, chocks, covers secured',
+        commands: [
+          'final walkaround',
+          'final inspection',
+          'complete walkaround'
+        ],
+      ),
+      InspectionItem(
+        id: 'cockpit_before_start',
+        title: 'Cockpit / Before Start',
+        description:
+            'Seats, doors, avionics, master switch, flaps, control lock',
+        commands: ['cockpit check', 'check cockpit', 'cockpit inspection'],
+      ),
       InspectionItem(
         id: 'airframe_structural',
         title: 'Airframe / Structural Inspection',
