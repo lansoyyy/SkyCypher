@@ -335,32 +335,7 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
             ),
             onPressed: canStartInspection
                 ? () {
-                    Navigator.of(context).push(
-                      PageRouteBuilder(
-                        pageBuilder: (context, animation, secondaryAnimation) =>
-                            VoiceInspectionScreen(
-                          aircraftModel: _selectedAircraft!.name,
-                          rpNumber: _rpNumber!,
-                        ),
-                        transitionsBuilder:
-                            (context, animation, secondaryAnimation, child) {
-                          return FadeTransition(
-                            opacity: animation,
-                            child: SlideTransition(
-                              position: Tween<Offset>(
-                                begin: const Offset(1.0, 0.0),
-                                end: Offset.zero,
-                              ).animate(CurvedAnimation(
-                                parent: animation,
-                                curve: Curves.easeInOut,
-                              )),
-                              child: child,
-                            ),
-                          );
-                        },
-                        transitionDuration: const Duration(milliseconds: 400),
-                      ),
-                    );
+                    _showInspectionWarningDialog(context);
                   }
                 : null,
             child: Row(
@@ -448,6 +423,86 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
                 Navigator.of(ctx).pop();
               },
               child: const Text('SAVE'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _showInspectionWarningDialog(BuildContext context) async {
+    return showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: _lighten(app_colors.secondary, .12),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Inspection Checklist Notice',
+            style: TextStyle(fontFamily: 'Bold'),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'The voice commands for the task list are based on our research and may not exactly match your aircraft\'s official handbook.',
+                style: TextStyle(fontFamily: 'Regular'),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Please refer to your aircraft\'s official handbook for the most accurate and complete inspection procedures.',
+                style: TextStyle(fontFamily: 'Bold'),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'This is a guidance tool only and should not replace proper training and official documentation.',
+                style: TextStyle(fontFamily: 'Regular'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('CANCEL'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _lighten(app_colors.secondary, .12),
+                foregroundColor: Colors.black,
+              ),
+              onPressed: () {
+                Navigator.of(context).pop();
+                // Navigate to voice inspection screen
+                Navigator.of(context).push(
+                  PageRouteBuilder(
+                    pageBuilder: (context, animation, secondaryAnimation) =>
+                        VoiceInspectionScreen(
+                      aircraftModel: _selectedAircraft!.name,
+                      rpNumber: _rpNumber!,
+                    ),
+                    transitionsBuilder:
+                        (context, animation, secondaryAnimation, child) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(1.0, 0.0),
+                            end: Offset.zero,
+                          ).animate(CurvedAnimation(
+                            parent: animation,
+                            curve: Curves.easeInOut,
+                          )),
+                          child: child,
+                        ),
+                      );
+                    },
+                    transitionDuration: const Duration(milliseconds: 400),
+                  ),
+                );
+              },
+              child: const Text('PROCEED'),
             ),
           ],
         );

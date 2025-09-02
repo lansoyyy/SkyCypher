@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:skycypher/utils/colors.dart' as app_colors;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:skycypher/services/auth_service.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 
 class VoiceInspectionScreen extends StatefulWidget {
   final String aircraftModel;
@@ -34,9 +35,16 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   String _lastRecognizedText = 'Initializing...';
   String? _userType;
 
+  // Text to speech implementation
+  late FlutterTts _flutterTts;
+  bool _isSpeaking = false;
+
   // Inspection checklists for different user types
   List<InspectionItem> _pilotInspectionItems = [];
   List<InspectionItem> _mechanicInspectionItems = [];
+
+  // Current task tracking
+  int _currentTaskIndex = 0;
 
   // Get the current inspection items based on user type
   List<InspectionItem> get _currentInspectionItems {
@@ -58,6 +66,12 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     // Initialize speech to text
     _speech = stt.SpeechToText();
     _initializeSpeechRecognition();
+
+    // Initialize text to speech
+    _flutterTts = FlutterTts();
+    _initializeTextToSpeech().then((_) {
+      print('TTS initialization completed');
+    });
 
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1500),
@@ -107,15 +121,54 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     // Mechanic inspection items (number 1 & 2 in your PDF)
     _pilotInspectionItems = [
       InspectionItem(
-        id: 'exterior_left_wing',
-        title: 'Left Wing / Fuselage Inspection',
+        id: 'fuel_tank_quality',
+        title: 'Fuel Tank Quality',
         description:
-            'Fuel tank quality, sump drain, leading edge, aileron, flap, tire, brake',
+            'Check fuel tank for contamination, proper fuel level and quality',
+        commands: ['fuel tank quality', 'check fuel tank', 'inspect fuel tank'],
+      ),
+      InspectionItem(
+        id: 'sump_drain',
+        title: 'Sump Drain',
+        description:
+            'Drain sump and check for water, sediment or other contaminants',
+        commands: ['sump drain', 'check sump', 'inspect sump drain'],
+      ),
+      InspectionItem(
+        id: 'leading_edge',
+        title: 'Leading Edge',
+        description: 'Inspect leading edge for damage, dents or wear',
         commands: [
-          'left wing inspection',
-          'check left wing',
-          'inspect left wing'
+          'leading edge',
+          'check leading edge',
+          'inspect leading edge'
         ],
+      ),
+      InspectionItem(
+        id: 'aileron',
+        title: 'Aileron',
+        description:
+            'Check aileron hinges, control surfaces and attachment points',
+        commands: ['aileron', 'check aileron', 'inspect aileron'],
+      ),
+      InspectionItem(
+        id: 'flap',
+        title: 'Flap',
+        description:
+            'Inspect flaps for damage, proper operation and attachment',
+        commands: ['flap', 'check flap', 'inspect flap'],
+      ),
+      InspectionItem(
+        id: 'tire',
+        title: 'Tire',
+        description: 'Check tire condition, pressure and tread wear',
+        commands: ['tire', 'check tire', 'inspect tire'],
+      ),
+      InspectionItem(
+        id: 'brake',
+        title: 'Brake',
+        description: 'Inspect brake pads, discs and hydraulic connections',
+        commands: ['brake', 'check brake', 'inspect brake'],
       ),
       InspectionItem(
         id: 'fuselage_tail',
@@ -166,15 +219,54 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
 
     _mechanicInspectionItems = [
       InspectionItem(
-        id: 'exterior_left_wing',
-        title: 'Left Wing / Fuselage Inspection',
+        id: 'fuel_tank_quality',
+        title: 'Fuel Tank Quality',
         description:
-            'Fuel tank quality, sump drain, leading edge, aileron, flap, tire, brake',
+            'Check fuel tank for contamination, proper fuel level and quality',
+        commands: ['fuel tank quality', 'check fuel tank', 'inspect fuel tank'],
+      ),
+      InspectionItem(
+        id: 'sump_drain',
+        title: 'Sump Drain',
+        description:
+            'Drain sump and check for water, sediment or other contaminants',
+        commands: ['sump drain', 'check sump', 'inspect sump drain'],
+      ),
+      InspectionItem(
+        id: 'leading_edge',
+        title: 'Leading Edge',
+        description: 'Inspect leading edge for damage, dents or wear',
         commands: [
-          'left wing inspection',
-          'check left wing',
-          'inspect left wing'
+          'leading edge',
+          'check leading edge',
+          'inspect leading edge'
         ],
+      ),
+      InspectionItem(
+        id: 'aileron',
+        title: 'Aileron',
+        description:
+            'Check aileron hinges, control surfaces and attachment points',
+        commands: ['aileron', 'check aileron', 'inspect aileron'],
+      ),
+      InspectionItem(
+        id: 'flap',
+        title: 'Flap',
+        description:
+            'Inspect flaps for damage, proper operation and attachment',
+        commands: ['flap', 'check flap', 'inspect flap'],
+      ),
+      InspectionItem(
+        id: 'tire',
+        title: 'Tire',
+        description: 'Check tire condition, pressure and tread wear',
+        commands: ['tire', 'check tire', 'inspect tire'],
+      ),
+      InspectionItem(
+        id: 'brake',
+        title: 'Brake',
+        description: 'Inspect brake pads, discs and hydraulic connections',
+        commands: ['brake', 'check brake', 'inspect brake'],
       ),
       InspectionItem(
         id: 'fuselage_tail',
@@ -270,6 +362,15 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         ],
       ),
     ];
+
+    // Start reading the first task after a short delay to ensure everything is initialized
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (_currentInspectionItems.isNotEmpty) {
+          _readCurrentTask();
+        }
+      });
+    });
   }
 
   Future<void> _initializeSpeechRecognition() async {
@@ -304,6 +405,58 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     }
   }
 
+  Future<void> _initializeTextToSpeech() async {
+    try {
+      await _flutterTts.setLanguage("en-US");
+      await _flutterTts.setSpeechRate(0.5);
+      await _flutterTts.setVolume(1.0);
+      await _flutterTts.setPitch(1.0);
+
+      print('TTS initialized successfully');
+
+      _flutterTts.setStartHandler(() {
+        print('TTS started speaking');
+        setState(() {
+          _isSpeaking = true;
+        });
+      });
+
+      _flutterTts.setCompletionHandler(() {
+        print('TTS finished speaking');
+        setState(() {
+          _isSpeaking = false;
+        });
+
+        // After speaking a task, listen for user response after a short delay
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _startListening();
+        });
+      });
+
+      _flutterTts.setErrorHandler((msg) {
+        print('TTS Error: $msg');
+        setState(() {
+          _isSpeaking = false;
+          _lastRecognizedText = 'TTS Error: $msg';
+        });
+        // Resume listening even if TTS fails after a short delay
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _startListening();
+        });
+      });
+
+      // Test TTS with a simple phrase to ensure it's working
+      await Future.delayed(const Duration(milliseconds: 1000));
+      print('Testing TTS with sample phrase');
+      // await _flutterTts.speak("Text to speech is ready");
+    } catch (e) {
+      print('Error initializing TTS: $e');
+      setState(() {
+        _lastRecognizedText = 'Error initializing TTS: $e';
+      });
+    }
+  }
+
   void _onSpeechError(dynamic error) {
     setState(() {
       _lastRecognizedText = 'Speech recognition error: $error';
@@ -323,6 +476,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     _stopListening(); // Stop listening when screen is disposed
     _pulseController.dispose();
     _waveController.dispose();
+    _flutterTts.stop();
     super.dispose();
   }
 
@@ -376,23 +530,52 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   }
 
   void _processCommand(String command) {
-    final lowerCommand = command.toLowerCase();
+    final lowerCommand = command.toLowerCase().trim();
 
-    for (var item in _currentInspectionItems) {
-      for (var cmd in item.commands) {
-        if (lowerCommand.contains(cmd.toLowerCase())) {
-          setState(() {
-            item.isCompleted = true;
-            item.completedAt = DateTime.now();
-          });
-          HapticFeedback.lightImpact();
-          // Provide audio feedback
-          _lastRecognizedText = 'Completed: ${item.title}';
-          break;
-        }
+    // Handle specific commands for task completion
+    if (_currentTaskIndex < _currentInspectionItems.length) {
+      final currentItem = _currentInspectionItems[_currentTaskIndex];
+
+      // Check for completion commands
+      if (lowerCommand == 'done' ||
+          lowerCommand == 'completed' ||
+          lowerCommand == 'check') {
+        setState(() {
+          currentItem.isCompleted = true;
+          currentItem.completedAt = DateTime.now();
+          currentItem.hasWarning = false; // Clear any warning
+        });
+        HapticFeedback.lightImpact();
+        _lastRecognizedText = 'Task completed: ${currentItem.title}';
+
+        // Move to next task
+        _currentTaskIndex++;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _readCurrentTask();
+        });
+        return;
+      }
+
+      // Check for warning commands
+      if (lowerCommand == 'not completed' || lowerCommand == 'problem') {
+        setState(() {
+          currentItem.isCompleted = false;
+          currentItem.hasWarning = true;
+          currentItem.warningAt = DateTime.now();
+        });
+        HapticFeedback.mediumImpact();
+        _lastRecognizedText = 'Task has issue: ${currentItem.title}';
+
+        // Move to next task
+        _currentTaskIndex++;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _readCurrentTask();
+        });
+        return;
       }
     }
 
+    // Handle general completion command
     if (lowerCommand.contains('complete') ||
         lowerCommand.contains('finish') ||
         lowerCommand.contains('inspection complete')) {
@@ -400,10 +583,49 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     }
   }
 
+  Future<void> _readCurrentTask() async {
+    if (_currentTaskIndex < _currentInspectionItems.length) {
+      final currentItem = _currentInspectionItems[_currentTaskIndex];
+      final textToSpeak = currentItem.title;
+
+      print('Reading task: $textToSpeak'); // Debug log
+
+      setState(() {
+        _lastRecognizedText = 'Reading task: $textToSpeak';
+      });
+
+      // Stop listening while speaking
+      _stopListening();
+
+      try {
+        // Add a small delay to ensure TTS is ready
+        await Future.delayed(const Duration(milliseconds: 100));
+
+        // Speak the task
+        await _flutterTts.speak(textToSpeak);
+      } catch (e) {
+        print('Error speaking task: $e');
+        setState(() {
+          _lastRecognizedText = 'Error reading task: $e';
+        });
+        // Continue to next task even if speaking fails
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _startListening();
+        });
+      }
+    } else {
+      // All tasks completed, show summary
+      _showCompletionDialog();
+    }
+  }
+
   void _showCompletionDialog() {
     final completedItems =
         _currentInspectionItems.where((item) => item.isCompleted).length;
+    final warningItems =
+        _currentInspectionItems.where((item) => item.hasWarning).length;
     final totalItems = _currentInspectionItems.length;
+    final pendingItems = totalItems - completedItems - warningItems;
 
     showDialog(
       context: context,
@@ -438,6 +660,28 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
                 fontWeight: FontWeight.bold,
               ),
             ),
+            if (warningItems > 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Warnings: $warningItems items with issues',
+                style: const TextStyle(
+                  color: Colors.orange,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+            if (pendingItems > 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Pending: $pendingItems items not addressed',
+                style: const TextStyle(
+                  color: Colors.grey,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
           ],
         ),
         actions: [
@@ -818,18 +1062,37 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   }
 
   Widget _buildChecklistItem(InspectionItem item) {
+    // Determine the background color based on state
+    Color backgroundColor;
+    Color borderColor;
+    IconData iconData;
+    Color iconColor;
+
+    if (item.isCompleted) {
+      backgroundColor = Colors.green.withOpacity(0.1);
+      borderColor = Colors.green.withOpacity(0.3);
+      iconData = Icons.check;
+      iconColor = Colors.green;
+    } else if (item.hasWarning) {
+      backgroundColor = Colors.orange.withOpacity(0.1);
+      borderColor = Colors.orange.withOpacity(0.3);
+      iconData = Icons.warning;
+      iconColor = Colors.orange;
+    } else {
+      backgroundColor = Colors.white.withOpacity(0.05);
+      borderColor = Colors.white.withOpacity(0.1);
+      iconData = Icons.circle_outlined;
+      iconColor = Colors.white.withOpacity(0.7);
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: item.isCompleted
-            ? Colors.green.withOpacity(0.1)
-            : Colors.white.withOpacity(0.05),
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: item.isCompleted
-              ? Colors.green.withOpacity(0.3)
-              : Colors.white.withOpacity(0.1),
+          color: borderColor,
           width: 1,
         ),
       ),
@@ -840,19 +1103,19 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
             height: 32,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: item.isCompleted
-                  ? Colors.green
+              color: item.isCompleted || item.hasWarning
+                  ? iconColor
                   : Colors.white.withOpacity(0.2),
               border: Border.all(
-                color: item.isCompleted
-                    ? Colors.green
+                color: item.isCompleted || item.hasWarning
+                    ? iconColor
                     : Colors.white.withOpacity(0.3),
                 width: 2,
               ),
             ),
             child: Icon(
-              item.isCompleted ? Icons.check : Icons.circle_outlined,
-              color: item.isCompleted
+              iconData,
+              color: item.isCompleted || item.hasWarning
                   ? Colors.white
                   : Colors.white.withOpacity(0.7),
               size: 18,
@@ -892,6 +1155,17 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
                     ),
                   ),
                 ],
+                if (item.hasWarning && item.warningAt != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Warning at ${item.warningAt!.hour.toString().padLeft(2, '0')}:${item.warningAt!.minute.toString().padLeft(2, '0')}',
+                    style: TextStyle(
+                      color: Colors.orange.withOpacity(0.8),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -908,6 +1182,8 @@ class InspectionItem {
   final List<String> commands;
   bool isCompleted;
   DateTime? completedAt;
+  bool hasWarning; // New field for warning state
+  DateTime? warningAt; // New field for warning timestamp
 
   InspectionItem({
     required this.id,
@@ -916,5 +1192,7 @@ class InspectionItem {
     required this.commands,
     this.isCompleted = false,
     this.completedAt,
+    this.hasWarning = false, // Initialize warning state
+    this.warningAt,
   });
 }
