@@ -12,16 +12,15 @@ class AircraftStatusScreen extends StatefulWidget {
 }
 
 class _AircraftStatusScreenState extends State<AircraftStatusScreen> {
-  final _rp152Controller = TextEditingController();
-  final _rp150Controller = TextEditingController();
-
-  String? _status152;
-  String? _status150;
+  final _newRpController = TextEditingController();
+  String? _selectedAircraftId;
+  String? _selectedStatus;
+  String? _editingRpNumber;
 
   final List<String> _statusOptions = const [
     'Available',
-    'Under Maintenance',
-    'Requires Inspection',
+    'Under\nMaintenance',
+    'Requires\nInspection',
   ];
 
   @override
@@ -33,8 +32,7 @@ class _AircraftStatusScreenState extends State<AircraftStatusScreen> {
 
   @override
   void dispose() {
-    _rp152Controller.dispose();
-    _rp150Controller.dispose();
+    _newRpController.dispose();
     super.dispose();
   }
 
@@ -116,7 +114,7 @@ class _AircraftStatusScreenState extends State<AircraftStatusScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Update aircraft RP and status.',
+                    'Manage aircraft RP numbers and their statuses.',
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.85),
                       fontFamily: 'Medium',
@@ -169,59 +167,12 @@ class _AircraftStatusScreenState extends State<AircraftStatusScreen> {
                           final cessna152 = aircraftMap['cessna_152'];
                           final cessna150 = aircraftMap['cessna_150'];
 
-                          // Update controllers and status values
-                          if (cessna152 != null) {
-                            _rp152Controller.text = cessna152.rpNumber ?? '';
-                            _status152 = cessna152.status;
-                          } else {
-                            // Reset if no data
-                            _rp152Controller.text = '';
-                            _status152 = null;
-                          }
-
-                          if (cessna150 != null) {
-                            _rp150Controller.text = cessna150.rpNumber ?? '';
-                            _status150 = cessna150.status;
-                          } else {
-                            // Reset if no data
-                            _rp150Controller.text = '';
-                            _status150 = null;
-                          }
-
                           return SingleChildScrollView(
                             child: Column(
                               children: [
-                                AircraftStatusCard(
-                                  title: cessna152?.name ?? 'Cessna 152',
-                                  aircraftImageAsset:
-                                      'assets/images/Cessna 152.png',
-                                  rpController: _rp152Controller,
-                                  statusValue: _status152,
-                                  onStatusChanged: (v) => _updateAircraftStatus(
-                                      'cessna_152', v, _rp152Controller.text),
-                                  onRpChanged: (rp) => _updateAircraftRp(
-                                      'cessna_152',
-                                      _status152 ?? 'Available',
-                                      rp ?? ''),
-                                  statusOptions: _statusOptions,
-                                  availableNote: cessna152?.note,
-                                ),
-                                const SizedBox(height: 16),
-                                AircraftStatusCard(
-                                  title: cessna150?.name ?? 'Cessna 150',
-                                  aircraftImageAsset:
-                                      'assets/images/Cessna 150.png',
-                                  rpController: _rp150Controller,
-                                  statusValue: _status150,
-                                  onStatusChanged: (v) => _updateAircraftStatus(
-                                      'cessna_150', v, _rp150Controller.text),
-                                  onRpChanged: (rp) => _updateAircraftRp(
-                                      'cessna_150',
-                                      _status150 ?? 'Available',
-                                      rp ?? ''),
-                                  statusOptions: _statusOptions,
-                                  availableNote: cessna150?.note,
-                                ),
+                                _buildAircraftSection(cessna152, 'Cessna 152'),
+                                const SizedBox(height: 24),
+                                _buildAircraftSection(cessna150, 'Cessna 150'),
                               ],
                             ),
                           );
@@ -242,74 +193,300 @@ class _AircraftStatusScreenState extends State<AircraftStatusScreen> {
     );
   }
 
-  // Update aircraft status in Firebase
-  void _updateAircraftStatus(
-      String aircraftId, String? status, String rpNumber) async {
-    try {
-      if (status != null) {
-        final aircraft = Aircraft(
-          id: aircraftId,
-          name: aircraftId == 'cessna_152' ? 'Cessna 152' : 'Cessna 150',
-          rpNumber: rpNumber,
-          status: status,
-          isAvailable: status == 'Available',
-          note: aircraftId == 'cessna_150' ? 'Currently not available' : null,
-          updatedAt: DateTime.now(),
-        );
-
-        await AircraftService.updateAircraft(aircraft);
-
-        setState(() {
-          if (aircraftId == 'cessna_152') {
-            _status152 = status;
-          } else {
-            _status150 = status;
-          }
-        });
-
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Aircraft status updated successfully.'),
-              backgroundColor: app_colors.secondary,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error updating aircraft status: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
+  Widget _buildAircraftSection(Aircraft? aircraft, String title) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-        );
-      }
-    }
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Aircraft header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: app_colors.secondary.withOpacity(0.9),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontFamily: 'Bold',
+                    fontSize: 20,
+                    color: Colors.black,
+                  ),
+                ),
+                const Spacer(),
+                if (aircraft != null && aircraft.rpEntries.isNotEmpty) ...[
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${aircraft.rpEntries.length} RP Entries',
+                      style: const TextStyle(
+                        fontFamily: 'Bold',
+                        fontSize: 14,
+                        color: Colors.black,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // Add new RP section
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Colors.grey.shade300),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Add New RP Number',
+                  style: TextStyle(
+                    fontFamily: 'Bold',
+                    fontSize: 16,
+                    color: Colors.black,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _newRpController,
+                        decoration: InputDecoration(
+                          hintText: 'Enter RP Number (e.g., RP-C152-001)',
+                          filled: true,
+                          fillColor: Colors.grey.shade100,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    SizedBox(
+                      width: 120,
+                      child: DropdownButton<String>(
+                        value: _selectedStatus,
+                        hint: const Text('Status'),
+                        items: _statusOptions.map((String status) {
+                          return DropdownMenuItem<String>(
+                            value: status,
+                            child: Text(status),
+                          );
+                        }).toList(),
+                        onChanged: (String? newValue) {
+                          setState(() {
+                            _selectedStatus = newValue;
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (_newRpController.text.isNotEmpty &&
+                            _selectedStatus != null &&
+                            aircraft != null) {
+                          _addRpEntry(aircraft.id, title);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: app_colors.secondary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text('Add'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // RP Entries list
+          if (aircraft != null && aircraft.rpEntries.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ...aircraft.rpEntries
+                .map((rpEntry) => _buildRpEntryTile(aircraft.id, rpEntry))
+                .toList(),
+          ] else ...[
+            const SizedBox(height: 16),
+            Center(
+              child: Text(
+                'No RP numbers added yet',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ],
+      ),
+    );
   }
 
-  // Update aircraft RP number in Firebase
-  void _updateAircraftRp(
-      String aircraftId, String status, String rpNumber) async {
+  Widget _buildRpEntryTile(String aircraftId, RpEntry rpEntry) {
+    Color getStatusColor(String status) {
+      switch (status) {
+        case 'Available':
+          return Colors.green;
+        case 'Under Maintenance':
+          return Colors.orange;
+        case 'Requires Inspection':
+          return Colors.red;
+        default:
+          return Colors.grey;
+      }
+    }
+
+    IconData getStatusIcon(String status) {
+      switch (status) {
+        case 'Available':
+          return Icons.check_circle;
+        case 'Under Maintenance':
+          return Icons.build;
+        case 'Requires Inspection':
+          return Icons.warning;
+        default:
+          return Icons.help;
+      }
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        title: Text(
+          rpEntry.rpNumber,
+          style: const TextStyle(
+            fontFamily: 'Bold',
+            fontSize: 16,
+          ),
+        ),
+        subtitle: Text(
+          'Added: ${_formatDate(rpEntry.addedAt)}',
+          style: TextStyle(
+            color: Colors.grey.shade600,
+            fontSize: 12,
+          ),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: getStatusColor(rpEntry.status).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: getStatusColor(rpEntry.status).withOpacity(0.3),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    getStatusIcon(rpEntry.status),
+                    size: 16,
+                    color: getStatusColor(rpEntry.status),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    rpEntry.status,
+                    style: TextStyle(
+                      color: getStatusColor(rpEntry.status),
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              onSelected: (String result) {
+                if (result == 'edit') {
+                  _editRpEntry(aircraftId, rpEntry);
+                } else if (result == 'delete') {
+                  _deleteRpEntry(aircraftId, rpEntry.rpNumber);
+                }
+              },
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                const PopupMenuItem<String>(
+                  value: 'edit',
+                  child: Text('Edit'),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'delete',
+                  child: Text('Delete'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  // Add a new RP entry
+  void _addRpEntry(String aircraftId, String title) async {
     try {
-      final aircraft = Aircraft(
-        id: aircraftId,
-        name: aircraftId == 'cessna_152' ? 'Cessna 152' : 'Cessna 150',
-        rpNumber: rpNumber,
-        status: status,
-        isAvailable: status == 'Available',
-        note: aircraftId == 'cessna_150' ? 'Currently not available' : null,
-        updatedAt: DateTime.now(),
+      final rpEntry = RpEntry(
+        name: title,
+        rpNumber: _newRpController.text.trim(),
+        status: _selectedStatus!,
+        addedAt: DateTime.now(),
       );
 
-      await AircraftService.updateAircraft(aircraft);
+      await AircraftService.addRpEntry(aircraftId, rpEntry);
+
+      // Clear the form
+      setState(() {
+        _newRpController.clear();
+        _selectedStatus = null;
+      });
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Aircraft RP number updated successfully.'),
+            content: Text('RP number added successfully.'),
             backgroundColor: app_colors.secondary,
             behavior: SnackBarBehavior.floating,
           ),
@@ -319,7 +496,7 @@ class _AircraftStatusScreenState extends State<AircraftStatusScreen> {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error updating aircraft RP number: $e'),
+            content: Text('Error adding RP number: $e'),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
           ),
@@ -327,201 +504,53 @@ class _AircraftStatusScreenState extends State<AircraftStatusScreen> {
       }
     }
   }
-}
 
-class AircraftStatusCard extends StatelessWidget {
-  final String title;
-  final String aircraftImageAsset;
-  final TextEditingController rpController;
-  final String? statusValue;
-  final void Function(String?)? onStatusChanged;
-  final List<String> statusOptions;
-  final String? availableNote;
-  final void Function(String)? onRpChanged;
+  // Edit an existing RP entry
+  void _editRpEntry(String aircraftId, RpEntry rpEntry) {
+    // Set the form fields with the current values
+    _newRpController.text = rpEntry.rpNumber;
+    _selectedStatus = rpEntry.status;
+    _editingRpNumber = rpEntry.rpNumber;
+    _selectedAircraftId = aircraftId;
 
-  const AircraftStatusCard({
-    super.key,
-    required this.title,
-    required this.aircraftImageAsset,
-    required this.rpController,
-    required this.statusValue,
-    required this.onStatusChanged,
-    required this.statusOptions,
-    this.availableNote,
-    this.onRpChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 6,
-      shadowColor: Colors.black.withOpacity(0.25),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.black.withOpacity(0.2)),
+    // Show a snackbar with instructions
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+              'Editing mode: Update the fields and click Add to save changes'),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      fontFamily: 'Bold',
-                      fontSize: 20,
-                      color: Colors.black,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: availableNote == null
-                        ? Colors.green.shade100
-                        : Colors.red.shade100,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.black.withOpacity(0.2)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        availableNote == null
-                            ? Icons.check_circle
-                            : Icons.error_outline,
-                        size: 14,
-                        color: Colors.black87,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        availableNote == null ? 'Available' : 'Not Available',
-                        style: const TextStyle(
-                          fontFamily: 'Bold',
-                          fontSize: 12,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  flex: 5,
-                  child: AspectRatio(
-                    aspectRatio: 16 / 9,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.asset(
-                        aircraftImageAsset,
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 8,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      TextField(
-                        controller: rpController,
-                        decoration: InputDecoration(
-                          hintText: 'Enter Aircraft RP Number',
-                          prefixIcon:
-                              const Icon(Icons.tag, color: Colors.black87),
-                          filled: true,
-                          fillColor: Colors.white,
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 12),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(
-                                color: Colors.black.withOpacity(0.2)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(
-                                color: app_colors.secondary, width: 1.5),
-                          ),
-                        ),
-                        style: const TextStyle(fontFamily: 'Regular'),
-                        onChanged: onRpChanged,
-                      ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        value: statusValue,
-                        decoration: InputDecoration(
-                          hintText: 'Select Status',
-                          prefixIcon: const Icon(Icons.check_circle_outline,
-                              color: Colors.black87),
-                          filled: true,
-                          fillColor: Colors.white,
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(
-                                color: Colors.black.withOpacity(0.2)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(
-                                color: app_colors.secondary, width: 1.5),
-                          ),
-                        ),
-                        icon: const Icon(Icons.arrow_drop_down),
-                        items: [
-                          for (final opt in statusOptions)
-                            DropdownMenuItem(
-                              value: opt,
-                              child: Text(
-                                opt,
-                                style: const TextStyle(
-                                    fontFamily: 'Bold', fontSize: 12),
-                              ),
-                            )
-                        ],
-                        onChanged: onStatusChanged,
-                      ),
-                      if (availableNote != null) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          availableNote!,
-                          style: TextStyle(
-                            fontFamily: 'Regular',
-                            color: Colors.black.withOpacity(0.6),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
+      );
+    }
+  }
+
+  // Delete an RP entry
+  void _deleteRpEntry(String aircraftId, String rpNumber) async {
+    try {
+      await AircraftService.deleteRpEntry(aircraftId, rpNumber);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('RP number deleted successfully.'),
+            backgroundColor: app_colors.secondary,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deleting RP number: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 }
 

@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:skycypher/screens/voice_inspection_screen.dart';
+import 'package:skycypher/screens/aircraft_selection_screen.dart';
 
 class VoiceAssistantManager {
   static final VoiceAssistantManager _instance =
@@ -137,7 +138,7 @@ class VoiceAssistantManager {
 
   /// Process recognized command
   void _processCommand(String command) {
-    final lowerCommand = command.toLowerCase();
+    final lowerCommand = command.toLowerCase().trim();
 
     // Add to command history
     _commandHistory.add(VoiceCommand(
@@ -146,22 +147,23 @@ class VoiceAssistantManager {
       timestamp: DateTime.now(),
     ));
 
-    // Handle aircraft selection flow
-    if (_isSelectingAircraft) {
-      _handleAircraftSelection(command);
+    // Check for inspection command - navigate directly to aircraft selection
+    if (lowerCommand.contains('inspection') ||
+        lowerCommand.contains('start inspection') ||
+        lowerCommand.contains('begin inspection') ||
+        lowerCommand.contains('voice inspection')) {
+      _dismissDialog();
+      if (_dialogContext != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          Navigator.push(
+            _dialogContext!,
+            MaterialPageRoute(
+              builder: (context) => const AircraftSelectionScreen(),
+            ),
+          );
+        });
+      }
       return;
-    }
-
-    // Handle RP number entry flow
-    if (_isEnteringRpNumber) {
-      _handleRpNumberEntry(command);
-      return;
-    }
-
-    // Check if command contains "inspection"
-    if (lowerCommand.contains('inspection')) {
-      // Start aircraft selection process
-      _startAircraftSelection();
     }
   }
 
@@ -174,19 +176,25 @@ class VoiceAssistantManager {
 
   /// Handle aircraft selection
   void _handleAircraftSelection(String command) {
-    final lowerCommand = command.toLowerCase();
+    final lowerCommand = command.toLowerCase().trim();
 
-    if (lowerCommand.contains('cessna 152')) {
+    if (lowerCommand.contains('cessna 152') || lowerCommand.contains('152')) {
       _selectedAircraft = 'Cessna 152';
       _isSelectingAircraft = false;
       _isEnteringRpNumber = true;
       _statusMessage = 'Please say the RP number';
       _updateDialogState();
-    } else if (lowerCommand.contains('cessna 150')) {
+    } else if (lowerCommand.contains('cessna 150') ||
+        lowerCommand.contains('150')) {
       _selectedAircraft = 'Cessna 150';
       _isSelectingAircraft = false;
       _isEnteringRpNumber = true;
       _statusMessage = 'Please say the RP number';
+      _updateDialogState();
+    } else {
+      // If aircraft not recognized, provide feedback and stay in selection mode
+      _statusMessage =
+          'Aircraft not recognized. Please say "Cessna 152" or "Cessna 150"';
       _updateDialogState();
     }
   }
@@ -194,8 +202,19 @@ class VoiceAssistantManager {
   /// Handle RP number entry
   void _handleRpNumberEntry(String command) {
     // For simplicity, we'll use the recognized text as the RP number
-    _rpNumber = command.toUpperCase();
+    _rpNumber = command.trim().toUpperCase();
+
+    // Validate RP number
+    if (_rpNumber.isEmpty) {
+      _statusMessage = 'Invalid RP number. Please try again.';
+      _updateDialogState();
+      // Stay in RP entry mode
+      return;
+    }
+
     _isEnteringRpNumber = false;
+    _statusMessage = 'Starting inspection...';
+    _updateDialogState();
 
     // Navigate to voice inspection screen with selected aircraft and RP number
     _navigateToVoiceInspection();
@@ -209,15 +228,17 @@ class VoiceAssistantManager {
     _dismissDialog();
 
     // Navigate to voice inspection screen
-    Navigator.push(
-      _dialogContext!,
-      MaterialPageRoute(
-        builder: (context) => VoiceInspectionScreen(
-          aircraftModel: _selectedAircraft,
-          rpNumber: _rpNumber,
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Navigator.push(
+        _dialogContext!,
+        MaterialPageRoute(
+          builder: (context) => VoiceInspectionScreen(
+            aircraftModel: _selectedAircraft,
+            rpNumber: _rpNumber,
+          ),
         ),
-      ),
-    );
+      );
+    });
   }
 
   /// Handle speech recognition errors
@@ -505,12 +526,8 @@ class _VoiceAssistantDialogState extends State<VoiceAssistantDialog>
   String _getInstructions() {
     if (!widget.manager.isInitialized) {
       return 'Initializing speech service...';
-    } else if (widget.manager.isSelectingAircraft) {
-      return 'Say "Cessna 152" or "Cessna 150"';
-    } else if (widget.manager.isEnteringRpNumber) {
-      return 'Please say the RP number';
     } else {
-      return 'Listening for "inspection"...';
+      return 'Say "start inspection" to begin...';
     }
   }
 }

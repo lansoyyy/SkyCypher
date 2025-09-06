@@ -35,6 +35,10 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   String _lastRecognizedText = 'Initializing...';
   String? _userType;
 
+  // Inspection type for mechanics
+  String _inspectionType = 'Pre-Flight'; // Default to Pre-Flight
+  final List<String> _inspectionTypes = ['Pre-Flight', 'Maintenance'];
+
   // Text to speech implementation
   late FlutterTts _flutterTts;
   bool _isSpeaking = false;
@@ -42,14 +46,19 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   // Inspection checklists for different user types
   List<InspectionItem> _pilotInspectionItems = [];
   List<InspectionItem> _mechanicInspectionItems = [];
+  List<InspectionItem> _mechanicMaintenanceItems =
+      []; // New list for maintenance items
 
   // Current task tracking
   int _currentTaskIndex = 0;
 
-  // Get the current inspection items based on user type
+  // Get the current inspection items based on user type and inspection type
   List<InspectionItem> get _currentInspectionItems {
     if (_userType == 'Mechanic') {
-      return _mechanicInspectionItems;
+      // Return maintenance items if mechanic selected maintenance, otherwise regular mechanic items
+      return _inspectionType == 'Maintenance'
+          ? _mechanicMaintenanceItems
+          : _mechanicInspectionItems;
     } else {
       // Default to pilot items for Pilot user type or if user type is not set
       return _pilotInspectionItems;
@@ -218,6 +227,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     ];
 
     _mechanicInspectionItems = [
+      // Pre Flight Category
       InspectionItem(
         id: 'fuel_tank_quality',
         title: 'Fuel Tank Quality',
@@ -313,6 +323,10 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
             'Seats, doors, avionics, master switch, flaps, control lock',
         commands: ['cockpit check', 'check cockpit', 'cockpit inspection'],
       ),
+    ];
+
+    // Maintenance items for mechanics (more comprehensive)
+    _mechanicMaintenanceItems = [
       InspectionItem(
         id: 'airframe_structural',
         title: 'Airframe / Structural Inspection',
@@ -359,6 +373,66 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
           'electrical inspection',
           'check electrical',
           'inspect electrical'
+        ],
+      ),
+      InspectionItem(
+        id: 'fuel_system',
+        title: 'Fuel System Inspection',
+        description: 'Tanks, lines, filters, pumps, vents, drains',
+        commands: [
+          'fuel system inspection',
+          'check fuel system',
+          'inspect fuel system'
+        ],
+      ),
+      InspectionItem(
+        id: 'hydraulic_system',
+        title: 'Hydraulic System Inspection',
+        description: 'Reservoirs, lines, pumps, actuators, leaks',
+        commands: [
+          'hydraulic system inspection',
+          'check hydraulic system',
+          'inspect hydraulic system'
+        ],
+      ),
+      InspectionItem(
+        id: 'instrument_panel',
+        title: 'Instrument Panel Inspection',
+        description: 'Gauges, indicators, warning systems, calibration',
+        commands: [
+          'instrument panel inspection',
+          'check instrument panel',
+          'inspect instrument panel'
+        ],
+      ),
+      InspectionItem(
+        id: 'navigation_lights',
+        title: 'Navigation Lights Inspection',
+        description: 'Position lights, strobes, landing lights, wiring',
+        commands: [
+          'navigation lights inspection',
+          'check navigation lights',
+          'inspect navigation lights'
+        ],
+      ),
+      InspectionItem(
+        id: 'communication_system',
+        title: 'Communication System Inspection',
+        description: 'Radios, intercom, antennas, audio panels',
+        commands: [
+          'communication system inspection',
+          'check communication system',
+          'inspect communication system'
+        ],
+      ),
+      InspectionItem(
+        id: 'pitot_static_system',
+        title: 'Pitot Static System Inspection',
+        description: 'Pitot tubes, static ports, heating, lines',
+        commands: [
+          'pitot static system inspection',
+          'check pitot static system',
+          'inspect pitot static system'
         ],
       ),
     ];
@@ -408,9 +482,10 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   Future<void> _initializeTextToSpeech() async {
     try {
       await _flutterTts.setLanguage("en-US");
-      await _flutterTts.setSpeechRate(0.5);
+      await _flutterTts.setSpeechRate(0.45); // Slightly slower for clarity
       await _flutterTts.setVolume(1.0);
-      await _flutterTts.setPitch(1.0);
+      await _flutterTts
+          .setPitch(1.1); // Slightly higher pitch for clearer voice
 
       print('TTS initialized successfully');
 
@@ -439,9 +514,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
           _isSpeaking = false;
           _lastRecognizedText = 'TTS Error: $msg';
         });
-        // Resume listening even if TTS fails after a short delay
-        Future.delayed(const Duration(milliseconds: 500), () {
-          _startListening();
+        // Retry the same task instead of skipping to the next one
+        Future.delayed(const Duration(milliseconds: 1000), () {
+          _readCurrentTask(); // Retry the same task
         });
       });
 
@@ -519,8 +594,8 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     _pulseController.stop();
     _waveController.stop();
 
-    // Process any final command
-    if (_currentCommand.isNotEmpty) {
+    // Process any final command only if it's not empty
+    if (_currentCommand.isNotEmpty && _currentCommand.trim().isNotEmpty) {
       _processCommand(_currentCommand);
     }
 
@@ -531,6 +606,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
 
   void _processCommand(String command) {
     final lowerCommand = command.toLowerCase().trim();
+
+    print(
+        'Processing command: $command, current task index: $_currentTaskIndex');
 
     // Handle specific commands for task completion
     if (_currentTaskIndex < _currentInspectionItems.length) {
@@ -547,6 +625,8 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         });
         HapticFeedback.lightImpact();
         _lastRecognizedText = 'Task completed: ${currentItem.title}';
+
+        print('Task completed: ${currentItem.title}, moving to next task');
 
         // Move to next task
         _currentTaskIndex++;
@@ -566,6 +646,8 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         HapticFeedback.mediumImpact();
         _lastRecognizedText = 'Task has issue: ${currentItem.title}';
 
+        print('Task has warning: ${currentItem.title}, moving to next task');
+
         // Move to next task
         _currentTaskIndex++;
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -584,9 +666,13 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   }
 
   Future<void> _readCurrentTask() async {
+    print('Reading task at index: $_currentTaskIndex');
     if (_currentTaskIndex < _currentInspectionItems.length) {
       final currentItem = _currentInspectionItems[_currentTaskIndex];
-      final textToSpeak = currentItem.title;
+      // Make the AI more conversational
+      final textToSpeak = _currentTaskIndex == 0
+          ? 'Starting $_inspectionType Checklist for ${widget.aircraftModel}. Please check the ${currentItem.title.toLowerCase()}.'
+          : 'Please check the ${currentItem.title.toLowerCase()}.';
 
       print('Reading task: $textToSpeak'); // Debug log
 
@@ -608,13 +694,14 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         setState(() {
           _lastRecognizedText = 'Error reading task: $e';
         });
-        // Continue to next task even if speaking fails
-        Future.delayed(const Duration(milliseconds: 500), () {
+        // Retry the same task instead of skipping to the next one
+        Future.delayed(const Duration(milliseconds: 1000), () {
           _startListening();
         });
       }
     } else {
       // All tasks completed, show summary
+      print('All tasks completed, showing summary');
       _showCompletionDialog();
     }
   }
@@ -651,6 +738,13 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
               'User Type: ${_userType ?? "Unknown"}',
               style: TextStyle(color: Colors.white.withOpacity(0.9)),
             ),
+            if (_userType == 'Mechanic') ...[
+              const SizedBox(height: 8),
+              Text(
+                'Inspection Type: $_inspectionType',
+                style: TextStyle(color: Colors.white.withOpacity(0.9)),
+              ),
+            ],
             const SizedBox(height: 16),
             Text(
               'Completed: $completedItems/$totalItems items',
@@ -848,6 +942,69 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
               fontSize: 16,
             ),
           ),
+          // Add dropdown for mechanics to select inspection type
+          if (_userType == 'Mechanic') ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.2),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Inspection Type:',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  DropdownButton<String>(
+                    value: _inspectionType,
+                    items: _inspectionTypes.map((String type) {
+                      return DropdownMenuItem<String>(
+                        value: type,
+                        child: Text(
+                          type,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (String? newValue) {
+                      if (newValue != null) {
+                        setState(() {
+                          _inspectionType = newValue;
+                          _currentTaskIndex =
+                              0; // Reset to first task when changing inspection type
+                        });
+                        // Restart the inspection with the new type
+                        Future.delayed(const Duration(milliseconds: 300), () {
+                          _readCurrentTask();
+                        });
+                      }
+                    },
+                    dropdownColor: app_colors.primary,
+                    icon: Icon(
+                      Icons.arrow_drop_down,
+                      color: Colors.white.withOpacity(0.8),
+                    ),
+                    underline: Container(),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -14,14 +14,13 @@ class AircraftSelectionScreen extends StatefulWidget {
 }
 
 class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
-  final TextEditingController _rpController = TextEditingController();
-
   // Track loading state
   bool _isLoading = true;
   // Store aircraft data
   List<Aircraft> _aircraftList = [];
   Aircraft? _selectedAircraft;
-  String? _rpNumber;
+  String? _selectedRpNumber;
+  String? _selectedRpStatus;
 
   @override
   void initState() {
@@ -59,13 +58,13 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
 
       List<Aircraft> aircraftList = [];
       for (var doc in snapshot.docs) {
-        aircraftList.add(
-            Aircraft.fromDocument(doc.data() as Map<String, dynamic>, doc.id));
+        final aircraft =
+            Aircraft.fromDocument(doc.data() as Map<String, dynamic>, doc.id);
+        aircraftList.add(aircraft);
       }
 
       setState(() {
         _aircraftList = aircraftList;
-        // Select the first available aircraft by default, or the first aircraft if none are available
       });
     } catch (e) {
       print('Error fetching aircraft: $e');
@@ -76,24 +75,16 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
   void _selectAircraft(Aircraft aircraft) {
     setState(() {
       _selectedAircraft = aircraft;
-
-      // If the aircraft has an RP number in the database, use it
-      if (aircraft.rpNumber?.isNotEmpty == true) {
-        _rpNumber = aircraft.rpNumber;
-      }
-      // If not and we don't have an RP number set yet, prompt for it
-      else if (_rpNumber?.isEmpty ?? true) {
-        // Schedule the prompt after the current frame
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _promptRP(context, aircraft);
-        });
-      }
+      // Reset RP selection when changing aircraft
+      _selectedRpNumber = null;
+      _selectedRpStatus = null;
     });
   }
 
+  // Select an RP number
+
   @override
   void dispose() {
-    _rpController.dispose();
     super.dispose();
   }
 
@@ -185,7 +176,7 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
                   const SizedBox(height: 8),
                   Center(
                     child: Text(
-                      'Select an aircraft and enter RP to begin.',
+                      'Select an aircraft and RP number to begin.',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.85),
                         fontSize: 12,
@@ -216,6 +207,7 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
     );
   }
 
+  int currentIndex = 0;
   Widget _buildAircraftContent() {
     if (_aircraftList.isEmpty) {
       return Center(
@@ -230,87 +222,51 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
     }
 
     // Check if START INSPECTION button should be shown
-    final bool canStartInspection = _selectedAircraft?.isAvailable == true &&
-        (_rpNumber?.isNotEmpty ?? false);
+    final bool canStartInspection =
+        _selectedRpNumber != null && _selectedRpStatus == 'Available';
 
     return Column(
       children: [
-        // Header for aircraft list
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            color: _lighten(app_colors.secondary, .06),
-            border: Border.all(color: Colors.white.withOpacity(0.18), width: 1),
-          ),
-          child: Row(
-            children: [
-              const Text(
-                'Available Aircraft',
-                style: TextStyle(
-                    color: Colors.black, fontFamily: 'Bold', fontSize: 18),
-              ),
-              const Spacer(),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  '${_aircraftList.where((a) => a.isAvailable).length}/${_aircraftList.length}',
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontFamily: 'Bold',
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 12),
-
         // Model cards
         Expanded(
           child: ListView.builder(
             itemCount: _aircraftList.length,
             itemBuilder: (context, index) {
               final aircraft = _aircraftList[index];
-              final isSelected = _selectedAircraft?.id == aircraft.id;
+              final isSelected = _selectedAircraft != null &&
+                  _selectedAircraft!.id == aircraft.id;
 
-              return GestureDetector(
-                onTap: aircraft.isAvailable
-                    ? () {
-                        _selectAircraft(aircraft);
-                      }
-                    : null,
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isSelected
-                          ? app_colors.secondary
-                          : Colors.transparent,
-                      width: 2,
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color:
+                        isSelected ? app_colors.secondary : Colors.transparent,
+                    width: 2,
+                  ),
+                ),
+                child: Stack(
+                  children: [
+                    _AircraftCard(
+                      title: aircraft.name,
+                      assetPath: 'assets/images/${aircraft.name}.png',
+                      available: aircraft.rpEntries.isEmpty ? false : true,
+                      status: aircraft.rpEntries.isEmpty
+                          ? 'Unavailable'
+                          : aircraft.rpEntries.last.status,
+                      isSelected: isSelected,
+                      rpEntries: aircraft.rpEntries,
+                      selectedRpNumber: _selectedRpNumber,
+                      onRpSelected: (String rpNumber, String status) {
+                        setState(() {
+                          currentIndex = index;
+                          _selectedRpNumber = rpNumber;
+                          _selectedRpStatus = status;
+                        });
+                      },
                     ),
-                  ),
-                  child: Stack(
-                    children: [
-                      _AircraftCard(
-                        title: aircraft.name,
-                        assetPath: 'assets/images/${aircraft.name}.png',
-                        available: aircraft.isAvailable,
-                        status: aircraft.status,
-                        rpNumber: aircraft.rpNumber ?? '',
-                        isSelected: isSelected,
-                        onEnterRP: () => _promptRP(context, aircraft),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
               );
             },
@@ -318,6 +274,41 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
         ),
 
         const SizedBox(height: 10),
+
+        // Status indicator for selected RP
+        if (_selectedRpNumber != null) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.black.withOpacity(0.1)),
+            ),
+            child: Row(
+              children: [
+                const Text(
+                  'Selected RP:',
+                  style: TextStyle(
+                    fontFamily: 'Bold',
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _selectedRpNumber!,
+                  style: const TextStyle(
+                    fontFamily: 'Bold',
+                    fontSize: 16,
+                    color: Colors.blue,
+                  ),
+                ),
+                const Spacer(),
+                _buildStatusBadge(_selectedRpStatus ?? 'Unknown'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
 
         // Start button - make it always visible but conditionally enabled
         SizedBox(
@@ -335,7 +326,9 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
             ),
             onPressed: canStartInspection
                 ? () {
-                    _showInspectionWarningDialog(context);
+                    print(_aircraftList[currentIndex].name);
+                    _showInspectionWarningDialog(
+                        context, _aircraftList[currentIndex].name);
                   }
                 : null,
             child: Row(
@@ -357,80 +350,66 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
     );
   }
 
-  Future<void> _promptRP(BuildContext context, Aircraft aircraft) async {
-    // Set a default RP number if it's empty in the database
-    _rpController.text = aircraft.rpNumber?.isNotEmpty == true
-        ? aircraft.rpNumber!
-        : _rpNumber ?? '';
+  Widget _buildStatusBadge(String status) {
+    Color getStatusColor(String status) {
+      switch (status) {
+        case 'Available':
+          return Colors.green;
+        case 'Under Maintenance':
+          return Colors.orange;
+        case 'Requires Inspection':
+          return Colors.red;
+        default:
+          return Colors.grey;
+      }
+    }
 
-    await showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: _lighten(app_colors.secondary, .12),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text(
-            'Enter Aircraft RP Number',
-            style: const TextStyle(fontFamily: 'Bold'),
-          ),
-          content: TextField(
-            controller: _rpController,
-            style: const TextStyle(fontFamily: 'Regular'),
-            decoration: InputDecoration(
-              hintText: 'e.g. RP-C152',
-              hintStyle:
-                  const TextStyle(color: Colors.black54, fontFamily: 'Regular'),
-              filled: true,
-              fillColor: Colors.white,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.black.withOpacity(0.2)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.black.withOpacity(0.2)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.black.withOpacity(0.45)),
-              ),
-              prefixIcon: const Icon(Icons.tag, color: Colors.black87),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('CANCEL'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _lighten(app_colors.secondary, .12),
-                foregroundColor: Colors.black,
-              ),
-              onPressed: () {
-                setState(() {
-                  _selectedAircraft = aircraft;
-                  _rpNumber = _rpController.text.trim();
+    IconData getStatusIcon(String status) {
+      switch (status) {
+        case 'Available':
+          return Icons.check_circle;
+        case 'Under Maintenance':
+          return Icons.build;
+        case 'Requires Inspection':
+          return Icons.warning;
+        default:
+          return Icons.help;
+      }
+    }
 
-                  // If RP is empty, set a default value to enable the button
-                  if (_rpNumber?.isEmpty ?? true) {
-                    _rpNumber = 'RP-${aircraft.name.replaceAll(' ', '')}';
-                  }
-                });
-                Navigator.of(ctx).pop();
-              },
-              child: const Text('SAVE'),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: getStatusColor(status).withOpacity(0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: getStatusColor(status).withOpacity(0.3),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            getStatusIcon(status),
+            size: 16,
+            color: getStatusColor(status),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            status,
+            style: TextStyle(
+              color: getStatusColor(status),
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
             ),
-          ],
-        );
-      },
+          ),
+        ],
+      ),
     );
   }
 
-  Future<void> _showInspectionWarningDialog(BuildContext context) async {
+  Future<void> _showInspectionWarningDialog(
+      BuildContext context, String title) async {
     return showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -479,8 +458,8 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
                   PageRouteBuilder(
                     pageBuilder: (context, animation, secondaryAnimation) =>
                         VoiceInspectionScreen(
-                      aircraftModel: _selectedAircraft!.name,
-                      rpNumber: _rpNumber!,
+                      aircraftModel: title,
+                      rpNumber: _selectedRpNumber!,
                     ),
                     transitionsBuilder:
                         (context, animation, secondaryAnimation, child) {
@@ -516,18 +495,20 @@ class _AircraftCard extends StatelessWidget {
   final String assetPath;
   final bool available;
   final String status;
-  final String rpNumber;
   final bool isSelected;
-  final VoidCallback onEnterRP;
+  final List<RpEntry> rpEntries;
+  final String? selectedRpNumber;
+  final Function(String, String) onRpSelected;
 
   const _AircraftCard({
     required this.title,
     required this.assetPath,
     required this.available,
     required this.status,
-    required this.rpNumber,
-    required this.onEnterRP,
-    this.isSelected = false,
+    required this.isSelected,
+    required this.rpEntries,
+    required this.selectedRpNumber,
+    required this.onRpSelected,
   });
 
   @override
@@ -544,125 +525,194 @@ class _AircraftCard extends StatelessWidget {
               isSelected ? _lighten(app_colors.secondary, 0.35) : Colors.white,
         ),
         padding: const EdgeInsets.all(10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Plane image
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontFamily: 'Bold',
+                      fontSize: 18,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: available
+                        ? Colors.green.withOpacity(0.15)
+                        : Colors.red.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                        color: (available ? Colors.green : Colors.red)
+                            .withOpacity(0.6)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        available ? Icons.check_circle : Icons.block,
+                        size: 14,
+                        color: available ? Colors.green : Colors.red,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        status,
+                        style: TextStyle(
+                          color: available
+                              ? Colors.green.shade800
+                              : Colors.red.shade800,
+                          fontSize: 11,
+                          fontFamily: 'Medium',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: Image.asset(
                 assetPath,
-                width: 80,
-                height: 54,
+                height: 60,
                 fit: BoxFit.contain,
               ),
             ),
-            const SizedBox(width: 12),
-            // Title + badge + RP button
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          title,
-                          style: const TextStyle(
-                            fontFamily: 'Bold',
-                            fontSize: 18,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
+            const SizedBox(height: 12),
+            const Text(
+              'Available RP Numbers:',
+              style: TextStyle(
+                fontFamily: 'Bold',
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (rpEntries.isEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'No RP numbers available for this aircraft',
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            ] else ...[
+              SizedBox(
+                height: 40,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: rpEntries.length,
+                  itemBuilder: (context, index) {
+                    final rpEntry = rpEntries[index];
+                    final isRpSelected = selectedRpNumber == rpEntry.rpNumber;
+
+                    return GestureDetector(
+                      onTap: () =>
+                          onRpSelected(rpEntry.rpNumber, rpEntry.status),
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 8),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                            horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: available
-                              ? Colors.green.withOpacity(0.15)
-                              : Colors.red.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(999),
+                          color: isRpSelected
+                              ? app_colors.secondary
+                              : Colors.grey.shade200,
+                          borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                              color: (available ? Colors.green : Colors.red)
-                                  .withOpacity(0.6)),
+                            color: isRpSelected
+                                ? app_colors.secondary
+                                : Colors.grey.shade300,
+                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              available ? Icons.check_circle : Icons.block,
-                              size: 14,
-                              color: available ? Colors.green : Colors.red,
+                            Text(
+                              'RP: ${rpEntry.rpNumber}',
+                              style: TextStyle(
+                                fontFamily: 'Bold',
+                                color:
+                                    isRpSelected ? Colors.white : Colors.black,
+                                fontSize: 12,
+                              ),
                             ),
                             const SizedBox(width: 4),
+                            _buildRpStatusIndicator(
+                                rpEntry.status, isRpSelected),
+                            const SizedBox(width: 2),
                             Text(
-                              status,
+                              rpEntry.status,
                               style: TextStyle(
-                                color: available
-                                    ? Colors.green.shade800
-                                    : Colors.red.shade800,
-                                fontSize: 11,
                                 fontFamily: 'Medium',
+                                color:
+                                    isRpSelected ? Colors.white : Colors.black,
+                                fontSize: 12,
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ],
-                  ),
-                  if (rpNumber.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      'RP: $rpNumber',
-                      style: TextStyle(
-                        color: Colors.black.withOpacity(0.7),
-                        fontSize: 13,
-                        fontFamily: 'Medium',
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 6),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        backgroundColor: _lighten(app_colors.secondary, .12),
-                        foregroundColor: Colors.black,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          side:
-                              BorderSide(color: Colors.black.withOpacity(0.25)),
-                        ),
-                      ),
-                      onPressed: available ? onEnterRP : null,
-                      child: Text(
-                        rpNumber.isEmpty
-                            ? 'No Aircraft RP Number'
-                            : 'Change RP Number',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                            fontFamily: 'Medium', fontSize: 12, height: 1.1),
-                      ),
-                    ),
-                  ),
-                ],
+                    );
+                  },
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
     );
   }
+
+  Widget _buildRpStatusIndicator(String status, bool isSelected) {
+    Color getStatusColor(String status, bool isSelected) {
+      switch (status) {
+        case 'Available':
+          return isSelected ? Colors.white : Colors.green;
+        case 'Under Maintenance':
+          return isSelected ? Colors.white : Colors.orange;
+        case 'Requires Inspection':
+          return isSelected ? Colors.white : Colors.red;
+        default:
+          return isSelected ? Colors.white : Colors.grey;
+      }
+    }
+
+    IconData getStatusIcon(String status) {
+      switch (status) {
+        case 'Available':
+          return Icons.check;
+        case 'Under Maintenance':
+          return Icons.build;
+        case 'Requires Inspection':
+          return Icons.warning;
+        default:
+          return Icons.help;
+      }
+    }
+
+    return Icon(
+      getStatusIcon(status),
+      size: 14,
+      color: getStatusColor(status, isSelected),
+    );
+  }
 }
 
-// Local helpers (copy of lighten/darken used elsewhere)
 Color _lighten(Color color, [double amount = .1]) {
   final hsl = HSLColor.fromColor(color);
   final hslLight = hsl.withLightness((hsl.lightness + amount).clamp(0.0, 1.0));
