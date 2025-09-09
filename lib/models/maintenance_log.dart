@@ -13,6 +13,18 @@ class MaintenanceLog {
   final String? imageUrl;
   final DateTime timestamp;
 
+  // New fields for the requested details
+  final String aircraftModel;
+  final String aircraftRegNumber;
+  final String aircraftParts;
+  final String maintenanceTask;
+  final String dateTimeStarted;
+  final String dateTimeEnded;
+  final String discrepancy;
+  final String correctiveAction;
+  final String componentRemarks;
+  final String inspectedByFullName;
+
   MaintenanceLog({
     required this.id,
     required this.component,
@@ -25,6 +37,17 @@ class MaintenanceLog {
     required this.actionTaken,
     this.imageUrl,
     required this.timestamp,
+    // New fields
+    required this.aircraftModel,
+    required this.aircraftRegNumber,
+    required this.aircraftParts,
+    required this.maintenanceTask,
+    required this.dateTimeStarted,
+    required this.dateTimeEnded,
+    required this.discrepancy,
+    required this.correctiveAction,
+    required this.componentRemarks,
+    required this.inspectedByFullName,
   });
 
   // Create a MaintenanceLog from Firestore document
@@ -41,6 +64,17 @@ class MaintenanceLog {
       actionTaken: data['actionTaken'] ?? '',
       imageUrl: data['imageUrl'],
       timestamp: (data['timestamp'] as Timestamp).toDate(),
+      // New fields
+      aircraftModel: data['aircraftModel'] ?? '',
+      aircraftRegNumber: data['aircraftRegNumber'] ?? '',
+      aircraftParts: data['aircraftParts'] ?? '',
+      maintenanceTask: data['maintenanceTask'] ?? '',
+      dateTimeStarted: data['dateTimeStarted'] ?? '',
+      dateTimeEnded: data['dateTimeEnded'] ?? '',
+      discrepancy: data['discrepancy'] ?? '',
+      correctiveAction: data['correctiveAction'] ?? '',
+      componentRemarks: data['componentRemarks'] ?? '',
+      inspectedByFullName: data['inspectedByFullName'] ?? '',
     );
   }
 
@@ -57,6 +91,17 @@ class MaintenanceLog {
       'actionTaken': actionTaken,
       'imageUrl': imageUrl,
       'timestamp': timestamp,
+      // New fields
+      'aircraftModel': aircraftModel,
+      'aircraftRegNumber': aircraftRegNumber,
+      'aircraftParts': aircraftParts,
+      'maintenanceTask': maintenanceTask,
+      'dateTimeStarted': dateTimeStarted,
+      'dateTimeEnded': dateTimeEnded,
+      'discrepancy': discrepancy,
+      'correctiveAction': correctiveAction,
+      'componentRemarks': componentRemarks,
+      'inspectedByFullName': inspectedByFullName,
     };
   }
 }

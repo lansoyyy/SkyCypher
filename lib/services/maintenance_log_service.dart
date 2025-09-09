@@ -25,6 +25,17 @@ class MaintenanceLogService {
     required String reportedIssue,
     required String actionTaken,
     File? image,
+    // New fields
+    required String aircraftModel,
+    required String aircraftRegNumber,
+    required String aircraftParts,
+    required String maintenanceTask,
+    required String dateTimeStarted,
+    required String dateTimeEnded,
+    required String discrepancy,
+    required String correctiveAction,
+    required String componentRemarks,
+    required String inspectedByFullName,
   }) async {
     String? imageUrl;
 
@@ -56,6 +67,17 @@ class MaintenanceLogService {
       'actionTaken': actionTaken,
       'imageUrl': imageUrl,
       'timestamp': FieldValue.serverTimestamp(),
+      // New fields
+      'aircraftModel': aircraftModel,
+      'aircraftRegNumber': aircraftRegNumber,
+      'aircraftParts': aircraftParts,
+      'maintenanceTask': maintenanceTask,
+      'dateTimeStarted': dateTimeStarted,
+      'dateTimeEnded': dateTimeEnded,
+      'discrepancy': discrepancy,
+      'correctiveAction': correctiveAction,
+      'componentRemarks': componentRemarks,
+      'inspectedByFullName': inspectedByFullName,
     });
   }
 

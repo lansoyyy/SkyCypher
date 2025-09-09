@@ -193,6 +193,18 @@ class _MaintenanceLogScreenState extends State<MaintenanceLogScreen> {
     final reportedIssueController = TextEditingController();
     final actionTakenController = TextEditingController();
 
+    // New controllers for additional fields
+    final aircraftModelController = TextEditingController();
+    final aircraftRegNumberController = TextEditingController();
+    final aircraftPartsController = TextEditingController();
+    final maintenanceTaskController = TextEditingController();
+    final dateTimeStartedController = TextEditingController();
+    final dateTimeEndedController = TextEditingController();
+    final discrepancyController = TextEditingController();
+    final correctiveActionController = TextEditingController();
+    final componentRemarksController = TextEditingController();
+    final inspectedByFullNameController = TextEditingController();
+
     // Date picker
     DateTime? selectedDate;
     final dateFormat = DateFormat('MMMM dd, yyyy');
@@ -234,6 +246,17 @@ class _MaintenanceLogScreenState extends State<MaintenanceLogScreen> {
           reportedIssue: reportedIssueController.text,
           actionTaken: actionTakenController.text,
           image: selectedImage,
+          // New fields
+          aircraftModel: aircraftModelController.text,
+          aircraftRegNumber: aircraftRegNumberController.text,
+          aircraftParts: aircraftPartsController.text,
+          maintenanceTask: maintenanceTaskController.text,
+          dateTimeStarted: dateTimeStartedController.text,
+          dateTimeEnded: dateTimeEndedController.text,
+          discrepancy: discrepancyController.text,
+          correctiveAction: correctiveActionController.text,
+          componentRemarks: componentRemarksController.text,
+          inspectedByFullName: inspectedByFullNameController.text,
         );
 
         if (context.mounted) {
@@ -292,6 +315,7 @@ class _MaintenanceLogScreenState extends State<MaintenanceLogScreen> {
                         child: SingleChildScrollView(
                           child: Column(
                             children: [
+                              // Existing fields
                               _LabeledField(
                                 controller: componentController,
                                 label: 'Component',
@@ -402,6 +426,65 @@ class _MaintenanceLogScreenState extends State<MaintenanceLogScreen> {
                                 maxLines: 3,
                                 icon: Icons.task_alt_outlined,
                               ),
+
+                              // New fields
+                              _LabeledField(
+                                controller: aircraftModelController,
+                                label: 'Aircraft Model',
+                                icon: Icons.flight_outlined,
+                              ),
+                              _LabeledField(
+                                controller: aircraftRegNumberController,
+                                label: 'Aircraft Registration Number',
+                                icon: Icons.numbers_outlined,
+                              ),
+                              _LabeledField(
+                                controller: aircraftPartsController,
+                                label: 'Aircraft Parts or Components',
+                                maxLines: 2,
+                                icon: Icons.settings_outlined,
+                              ),
+                              _LabeledField(
+                                controller: maintenanceTaskController,
+                                label: 'Maintenance Task (specific indication)',
+                                maxLines: 2,
+                                icon: Icons.build_outlined,
+                              ),
+                              _LabeledField(
+                                controller: dateTimeStartedController,
+                                label: 'Date & Time Started',
+                                icon: Icons.access_time_outlined,
+                              ),
+                              _LabeledField(
+                                controller: dateTimeEndedController,
+                                label: 'Date & Time Ended',
+                                icon: Icons.access_time_filled_outlined,
+                              ),
+                              _LabeledField(
+                                controller: discrepancyController,
+                                label: 'Discrepancy',
+                                maxLines: 3,
+                                icon: Icons.warning_outlined,
+                              ),
+                              _LabeledField(
+                                controller: correctiveActionController,
+                                label: 'Corrective Action',
+                                maxLines: 3,
+                                icon: Icons.build_circle_outlined,
+                              ),
+                              _LabeledField(
+                                controller: componentRemarksController,
+                                label:
+                                    'Component/s Remark/s (specific indication)',
+                                maxLines: 3,
+                                icon: Icons.comment_outlined,
+                              ),
+                              _LabeledField(
+                                controller: inspectedByFullNameController,
+                                label: 'Inspected by',
+                                icon: Icons.person_pin_outlined,
+                              ),
+
                               // Image picker
                               if (selectedImage != null)
                                 Padding(

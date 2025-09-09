@@ -224,6 +224,109 @@ class MaintenanceLogDetailScreen extends StatelessWidget {
                                   fontSize: 14,
                                 ),
                               ),
+                              const SizedBox(height: 18),
+
+                              // New fields
+                              const _SectionTitle('Aircraft Information:'),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Aircraft Model: ${maintenanceLog.aircraftModel}',
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontFamily: 'Regular',
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Registration Number: ${maintenanceLog.aircraftRegNumber}',
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontFamily: 'Regular',
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Parts/Components: ${maintenanceLog.aircraftParts}',
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontFamily: 'Regular',
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+
+                              const _SectionTitle('Maintenance Details:'),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Task: ${maintenanceLog.maintenanceTask}',
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontFamily: 'Regular',
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Started: ${maintenanceLog.dateTimeStarted}',
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontFamily: 'Regular',
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Ended: ${maintenanceLog.dateTimeEnded}',
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontFamily: 'Regular',
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+
+                              const _SectionTitle('Findings:'),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Discrepancy: ${maintenanceLog.discrepancy}',
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontFamily: 'Regular',
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Corrective Action: ${maintenanceLog.correctiveAction}',
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontFamily: 'Regular',
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Remarks: ${maintenanceLog.componentRemarks}',
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontFamily: 'Regular',
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+
+                              const _SectionTitle('Inspector:'),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Inspected by: ${maintenanceLog.inspectedByFullName}',
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontFamily: 'Regular',
+                                  fontSize: 14,
+                                ),
+                              ),
                             ],
                           ),
                         ),
