@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:async'; // Add this import for Timer
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:skycypher/utils/colors.dart' as app_colors;
@@ -51,6 +52,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
 
   // Current task tracking
   int _currentTaskIndex = 0;
+
+  // Timer for continuous listening check
+  Timer? _listeningCheckTimer;
 
   // Get the current inspection items based on user type and inspection type
   List<InspectionItem> get _currentInspectionItems {
@@ -107,6 +111,18 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       parent: _waveController,
       curve: Curves.easeInOut,
     ));
+
+    // Start periodic check for continuous listening
+    _startListeningCheck();
+  }
+
+  void _startListeningCheck() {
+    _listeningCheckTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (mounted && !_isSpeaking && !_isListening) {
+        print('Periodic check: Not listening, attempting to restart');
+        _startListening();
+      }
+    });
   }
 
   Future<void> _fetchUserData() async {
@@ -440,7 +456,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     // Start reading the first task after a short delay to ensure everything is initialized
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(milliseconds: 500), () {
-        if (_currentInspectionItems.isNotEmpty) {
+        if (mounted && _currentInspectionItems.isNotEmpty) {
           _readCurrentTask();
         }
       });
@@ -456,6 +472,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       bool available = await _speech.initialize(
         onError: (error) => _onSpeechError(error),
         onStatus: (status) => _onSpeechStatus(status),
+        finalTimeout: const Duration(seconds: 30), // Longer final timeout
       );
 
       if (available) {
@@ -502,9 +519,31 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
           _isSpeaking = false;
         });
 
-        // After speaking a task, listen for user response after a short delay
-        Future.delayed(const Duration(milliseconds: 500), () {
-          _startListening();
+        // After speaking a task, ensure we're listening for user response
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) {
+            // Ensure continuous listening - restart if needed
+            if (!_isListening) {
+              _startListening();
+            }
+          }
+        });
+      });
+
+      _flutterTts.setCancelHandler(() {
+        print('TTS cancelled');
+        setState(() {
+          _isSpeaking = false;
+        });
+
+        // Ensure we're still listening after cancellation
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) {
+            // Ensure continuous listening - restart if needed
+            if (!_isListening) {
+              _startListening();
+            }
+          }
         });
       });
 
@@ -516,7 +555,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         });
         // Retry the same task instead of skipping to the next one
         Future.delayed(const Duration(milliseconds: 1000), () {
-          _readCurrentTask(); // Retry the same task
+          if (mounted) {
+            _readCurrentTask(); // Retry the same task
+          }
         });
       });
 
@@ -533,6 +574,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   }
 
   void _onSpeechError(dynamic error) {
+    print('Speech recognition error: $error');
     setState(() {
       _lastRecognizedText = 'Speech recognition error: $error';
       _isListening = false;
@@ -540,10 +582,26 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     });
     _pulseController.stop();
     _waveController.stop();
+
+    // Automatically restart listening after an error
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        _startListening();
+      }
+    });
   }
 
   void _onSpeechStatus(String status) {
+    print('Speech recognition status: $status');
     // Handle speech recognition status changes if needed
+    // Restart listening if it stops unexpectedly
+    if (status == 'notListening' && mounted) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && !_isSpeaking) {
+          _startListening();
+        }
+      });
+    }
   }
 
   @override
@@ -552,6 +610,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     _pulseController.dispose();
     _waveController.dispose();
     _flutterTts.stop();
+    _listeningCheckTimer?.cancel(); // Cancel the periodic check timer
     super.dispose();
   }
 
@@ -568,18 +627,38 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     _pulseController.repeat(reverse: true);
     _waveController.repeat();
 
-    // Start listening for speech
-    _speech.listen(
-      onResult: (result) {
-        setState(() {
-          _currentCommand = result.recognizedWords;
-          _lastRecognizedText = 'Recognized: "$_currentCommand"';
-        });
+    try {
+      // Start listening for speech with continuous listening parameters
+      _speech.listen(
+        onResult: (result) {
+          setState(() {
+            _currentCommand = result.recognizedWords;
+            _lastRecognizedText = 'Recognized: "$_currentCommand"';
+          });
 
-        // Process the command immediately
-        _processCommand(_currentCommand);
-      },
-    );
+          // Process the command immediately
+          _processCommand(_currentCommand);
+        },
+        listenFor: const Duration(seconds: 30), // Listen for longer periods
+        pauseFor: const Duration(seconds: 5), // Allow longer pauses
+        localeId: 'en_US',
+      );
+    } catch (e) {
+      print('Error starting speech recognition: $e');
+      setState(() {
+        _isListening = false;
+        _lastRecognizedText = 'Error starting speech recognition: $e';
+      });
+      _pulseController.stop();
+      _waveController.stop();
+
+      // Retry listening after a short delay
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          _startListening();
+        }
+      });
+    }
   }
 
   void _stopListening() {
@@ -590,7 +669,12 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       _isProcessing = true;
     });
 
-    _speech.stop();
+    try {
+      _speech.stop();
+    } catch (e) {
+      print('Error stopping speech recognition: $e');
+    }
+
     _pulseController.stop();
     _waveController.stop();
 
@@ -631,7 +715,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         // Move to next task
         _currentTaskIndex++;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _readCurrentTask();
+          if (mounted) {
+            _readCurrentTask();
+          }
         });
         return;
       }
@@ -651,7 +737,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         // Move to next task
         _currentTaskIndex++;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _readCurrentTask();
+          if (mounted) {
+            _readCurrentTask();
+          }
         });
         return;
       }
@@ -661,7 +749,24 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     if (lowerCommand.contains('complete') ||
         lowerCommand.contains('finish') ||
         lowerCommand.contains('inspection complete')) {
-      _showCompletionDialog();
+      if (mounted) {
+        _showCompletionDialog();
+      }
+      return;
+    }
+
+    // If we get here, the command wasn't recognized, but we should keep listening
+    // Don't stop listening - just inform the user and continue
+    _lastRecognizedText = 'Command not recognized. Please try again.';
+    print('Command not recognized: $command');
+
+    // Ensure we're still listening
+    if (!_isListening && mounted) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && !_isListening) {
+          _startListening();
+        }
+      });
     }
   }
 
@@ -680,8 +785,8 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         _lastRecognizedText = 'Reading task: $textToSpeak';
       });
 
-      // Stop listening while speaking
-      _stopListening();
+      // Don't stop listening while speaking - keep listening continuously
+      // _stopListening(); // Removed this line - we keep listening
 
       try {
         // Add a small delay to ensure TTS is ready
@@ -696,13 +801,25 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         });
         // Retry the same task instead of skipping to the next one
         Future.delayed(const Duration(milliseconds: 1000), () {
-          _startListening();
+          if (mounted) {
+            _readCurrentTask(); // Retry the same task
+          }
         });
+        return;
       }
+
+      // Ensure we're still listening after speaking
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && !_isListening) {
+          _startListening();
+        }
+      });
     } else {
       // All tasks completed, show summary
       print('All tasks completed, showing summary');
-      _showCompletionDialog();
+      if (mounted) {
+        _showCompletionDialog();
+      }
     }
   }
 

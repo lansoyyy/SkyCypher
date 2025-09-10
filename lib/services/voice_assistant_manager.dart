@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:skycypher/screens/voice_inspection_screen.dart';
 import 'package:skycypher/screens/aircraft_selection_screen.dart';
+import 'package:skycypher/screens/maintenance_log_screen.dart';
+import 'package:skycypher/screens/aircraft_status_screen.dart';
 
 class VoiceAssistantManager {
   static final VoiceAssistantManager _instance =
@@ -20,6 +22,9 @@ class VoiceAssistantManager {
   BuildContext? _dialogContext;
   OverlayEntry? _overlayEntry;
   final List<VoiceCommand> _commandHistory = [];
+
+  // Timer for continuous listening check
+  Timer? _listeningCheckTimer;
 
   // Aircraft selection state
   bool _isSelectingAircraft = false;
@@ -50,10 +55,25 @@ class VoiceAssistantManager {
     );
 
     Overlay.of(context).insert(_overlayEntry!);
+
+    // Start periodic check for continuous listening
+    _startListeningCheck();
+  }
+
+  /// Start periodic check for continuous listening
+  void _startListeningCheck() {
+    _listeningCheckTimer?.cancel();
+    _listeningCheckTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (_overlayEntry != null && !_isListening && _isInitialized) {
+        // Restart listening if dialog is open but not listening
+        listen();
+      }
+    });
   }
 
   /// Dismiss the voice assistant dialog
   void _dismissDialog() {
+    _listeningCheckTimer?.cancel();
     _overlayEntry?.remove();
     _overlayEntry = null;
     _dialogContext = null;
@@ -75,6 +95,7 @@ class VoiceAssistantManager {
       bool available = await _speech!.initialize(
         onError: (error) => _onSpeechError(error),
         onStatus: (status) => _onSpeechStatus(status),
+        finalTimeout: const Duration(seconds: 30), // Longer final timeout
       );
       _isInitialized = available;
       _statusMessage =
@@ -123,6 +144,9 @@ class VoiceAssistantManager {
           _processCommand(_recognizedText);
         }
       },
+      listenFor: const Duration(seconds: 30), // Listen for longer periods
+      pauseFor: const Duration(seconds: 5), // Allow longer pauses
+      localeId: 'en_US',
     );
   }
 
@@ -147,20 +171,64 @@ class VoiceAssistantManager {
       timestamp: DateTime.now(),
     ));
 
-    // Check for inspection command - navigate directly to aircraft selection
-    if (lowerCommand.contains('inspection') ||
-        lowerCommand.contains('start inspection') ||
-        lowerCommand.contains('begin inspection') ||
-        lowerCommand.contains('voice inspection')) {
+    // Check for status command - navigate directly to aircraft status screen
+    // This will match "status" anywhere in the spoken sentence
+    if (lowerCommand.contains('status')) {
+      // Stop listening before navigating
+      stop();
       _dismissDialog();
-      if (_dialogContext != null) {
+      if (_dialogContext != null && _dialogContext!.mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          Navigator.push(
-            _dialogContext!,
-            MaterialPageRoute(
-              builder: (context) => const AircraftSelectionScreen(),
-            ),
-          );
+          if (_dialogContext != null && _dialogContext!.mounted) {
+            Navigator.push(
+              _dialogContext!,
+              MaterialPageRoute(
+                builder: (context) => const AircraftStatusScreen(),
+              ),
+            );
+          }
+        });
+      }
+      return;
+    }
+
+    // Check for maintenance command - navigate directly to maintenance log screen
+    // This will match "maintenance" anywhere in the spoken sentence
+    if (lowerCommand.contains('maintenance')) {
+      // Stop listening before navigating
+      stop();
+      _dismissDialog();
+      if (_dialogContext != null && _dialogContext!.mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_dialogContext != null && _dialogContext!.mounted) {
+            Navigator.push(
+              _dialogContext!,
+              MaterialPageRoute(
+                builder: (context) => const MaintenanceLogScreen(),
+              ),
+            );
+          }
+        });
+      }
+      return;
+    }
+
+    // Check for inspection command - navigate directly to aircraft selection
+    // This will match "inspection" or "inspections" anywhere in the spoken sentence
+    if (lowerCommand.contains('inspection')) {
+      // Stop listening before navigating
+      stop();
+      _dismissDialog();
+      if (_dialogContext != null && _dialogContext!.mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_dialogContext != null && _dialogContext!.mounted) {
+            Navigator.push(
+              _dialogContext!,
+              MaterialPageRoute(
+                builder: (context) => const AircraftSelectionScreen(),
+              ),
+            );
+          }
         });
       }
       return;
@@ -222,22 +290,24 @@ class VoiceAssistantManager {
 
   /// Navigate to voice inspection screen while maintaining dialog
   void _navigateToVoiceInspection() {
-    if (_dialogContext == null) return;
+    if (_dialogContext == null || !_dialogContext!.mounted) return;
 
     // Dismiss the voice assistant dialog before navigating
     _dismissDialog();
 
     // Navigate to voice inspection screen
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Navigator.push(
-        _dialogContext!,
-        MaterialPageRoute(
-          builder: (context) => VoiceInspectionScreen(
-            aircraftModel: _selectedAircraft,
-            rpNumber: _rpNumber,
+      if (_dialogContext != null && _dialogContext!.mounted) {
+        Navigator.push(
+          _dialogContext!,
+          MaterialPageRoute(
+            builder: (context) => VoiceInspectionScreen(
+              aircraftModel: _selectedAircraft,
+              rpNumber: _rpNumber,
+            ),
           ),
-        ),
-      );
+        );
+      }
     });
   }
 
@@ -257,9 +327,20 @@ class VoiceAssistantManager {
         break;
       case 'notListening':
         _statusMessage = 'Not listening';
+        // Automatically restart listening if it stops unexpectedly
+        if (_isListening) {
+          _isListening = false;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_overlayEntry != null) {
+              // Only restart if dialog is still open
+              listen();
+            }
+          });
+        }
         break;
       case 'done':
         _statusMessage = 'Done processing';
+        _isListening = false;
         break;
     }
     _updateDialogState();
@@ -527,7 +608,7 @@ class _VoiceAssistantDialogState extends State<VoiceAssistantDialog>
     if (!widget.manager.isInitialized) {
       return 'Initializing speech service...';
     } else {
-      return 'Say "start inspection" to begin...';
+      return 'Say "inspection", "maintenance", or "status"...';
     }
   }
 }

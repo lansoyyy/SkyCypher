@@ -135,18 +135,6 @@ class _MaintenanceLogScreenState extends State<MaintenanceLogScreen> {
                       },
                     ),
                   ),
-
-                  const SizedBox(height: 12),
-                  Center(
-                    child: Text(
-                      'Logbook Entry • ${DateTime.now().year}',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.8),
-                        fontFamily: 'Regular',
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
