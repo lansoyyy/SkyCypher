@@ -85,7 +85,7 @@ class _MaintenanceLogScreenState extends State<MaintenanceLogScreen> {
 
                   const SizedBox(height: 8),
                   Text(
-                    'Tap a log to view details or add a new one.',
+                    'Professional Aircraft Maintenance Logbook',
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.85),
                       fontFamily: 'Medium',
@@ -94,7 +94,7 @@ class _MaintenanceLogScreenState extends State<MaintenanceLogScreen> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Maintenance logs list
+                  // Maintenance logs list - Logbook style
                   Expanded(
                     child: StreamBuilder<QuerySnapshot>(
                       stream: MaintenanceLogService.getMaintenanceLogsStream(),
@@ -114,38 +114,11 @@ class _MaintenanceLogScreenState extends State<MaintenanceLogScreen> {
 
                         if (snapshot.hasData &&
                             snapshot.data!.docs.isNotEmpty) {
-                          return ListView.builder(
-                            itemCount: snapshot.data!.docs.length,
-                            itemBuilder: (context, index) {
-                              DocumentSnapshot document =
-                                  snapshot.data!.docs[index];
-                              Map<String, dynamic> data =
-                                  document.data() as Map<String, dynamic>;
-
-                              // Create MaintenanceLog object from document data
-                              final maintenanceLog =
-                                  MaintenanceLog.fromDocument(
-                                      data, document.id);
-
-                              return _InfoCard(
-                                rows: [
-                                  'Component: ${data['component'] ?? 'N/A'}',
-                                  'Date: ${data['date'] ?? 'N/A'}',
-                                  'Location: ${data['location'] ?? 'N/A'}',
-                                  'Inspected By: ${data['inspectedBy'] ?? 'N/A'}',
-                                  'Aircraft: ${data['aircraft'] ?? 'N/A'}',
-                                ],
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          MaintenanceLogDetailScreen(
-                                              maintenanceLog: maintenanceLog),
-                                    ),
-                                  );
-                                },
-                              );
-                            },
+                          return _LogbookTable(
+                            logs: snapshot.data!.docs
+                                .map((doc) => MaintenanceLog.fromDocument(
+                                    doc.data() as Map<String, dynamic>, doc.id))
+                                .toList(),
                           );
                         } else {
                           return const Center(
@@ -166,7 +139,7 @@ class _MaintenanceLogScreenState extends State<MaintenanceLogScreen> {
                   const SizedBox(height: 12),
                   Center(
                     child: Text(
-                      'Tip: Click the paper plane to see more information.',
+                      'Logbook Entry • ${DateTime.now().year}',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.8),
                         fontFamily: 'Regular',
@@ -784,6 +757,216 @@ class _LabeledField extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _LogbookTable extends StatelessWidget {
+  final List<MaintenanceLog> logs;
+
+  const _LogbookTable({required this.logs});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.black.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(
+          width: 800, // Fixed width for horizontal scrolling
+          child: Column(
+            children: [
+              // Table header
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: const BoxDecoration(
+                  color: app_colors.primary,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+                ),
+                child: const Row(
+                  children: [
+                    Expanded(
+                      flex: 1,
+                      child: Text(
+                        '#',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        'Date',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: Text(
+                        'Aircraft',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        'Component',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        'Inspector',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Table body
+              Column(
+                children: [
+                  for (int i = 0; i < logs.length; i++)
+                    _LogbookTableRow(
+                      index: i + 1,
+                      log: logs[i],
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LogbookTableRow extends StatelessWidget {
+  final int index;
+  final MaintenanceLog log;
+
+  const _LogbookTableRow({
+    required this.index,
+    required this.log,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => MaintenanceLogDetailScreen(maintenanceLog: log),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: Colors.grey.withOpacity(0.3),
+              width: 0.5,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            // Index
+            Expanded(
+              flex: 1,
+              child: Text(
+                '$index',
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+            // Date
+            Expanded(
+              flex: 2,
+              child: Text(
+                log.date.isNotEmpty ? log.date : 'N/A',
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+            // Aircraft
+            Expanded(
+              flex: 3,
+              child: Text(
+                log.aircraft.isNotEmpty
+                    ? log.aircraft
+                    : (log.aircraftModel.isNotEmpty
+                        ? log.aircraftModel
+                        : 'N/A'),
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+            // Component
+            Expanded(
+              flex: 2,
+              child: Text(
+                log.component.isNotEmpty ? log.component : 'N/A',
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+            // Inspector
+            Expanded(
+              flex: 2,
+              child: Text(
+                log.inspectedByFullName.isNotEmpty
+                    ? log.inspectedByFullName
+                    : (log.inspectedBy.isNotEmpty ? log.inspectedBy : 'N/A'),
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
