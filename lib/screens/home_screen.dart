@@ -7,7 +7,7 @@ import 'package:skycypher/screens/maintenance_log_screen.dart';
 import 'package:skycypher/screens/aircraft_status_screen.dart';
 import 'package:skycypher/widgets/logout_widget.dart';
 import 'package:skycypher/services/auth_service.dart';
-import 'package:skycypher/services/voice_assistant_manager.dart';
+import 'package:skycypher/services/simple_voice_commands.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,7 +23,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late Animation<Offset> _slideAnimation;
   late List<AnimationController> _cardControllers;
   late List<Animation<double>> _cardAnimations;
-  late VoiceAssistantManager _voiceAssistantManager;
 
   // User data variables
   String? _userName;
@@ -34,9 +33,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-
-    _voiceAssistantManager = VoiceAssistantManager.getInstance();
-    _initializeVoiceAssistant();
 
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 800),
@@ -84,15 +80,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     _startAnimations();
     _fetchUserData();
-  }
-
-  Future<void> _initializeVoiceAssistant() async {
-    try {
-      await _voiceAssistantManager.initialize();
-    } catch (e) {
-      // Handle initialization error
-      print('Voice assistant initialization failed: $e');
-    }
   }
 
   void _startAnimations() async {
@@ -158,25 +145,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  void _showVoiceAssistantDialog() async {
-    // Ensure the voice assistant is initialized before showing the dialog
-    if (!_voiceAssistantManager.isInitialized) {
-      // Show a loading state or message while initializing
-      // For now, we'll just try to initialize and then show the dialog
-      try {
-        bool initialized = await _voiceAssistantManager.initialize();
-        if (!initialized) {
-          // Handle initialization failure
-          print('Failed to initialize voice assistant');
-          return;
-        }
-      } catch (e) {
-        print('Error initializing voice assistant: $e');
-        return;
-      }
-    }
-
-    _voiceAssistantManager.showDialog(context);
+  void _showVoiceAssistantDialog() {
+    SimpleVoiceCommands.listenForCommands(context);
   }
 
   @override

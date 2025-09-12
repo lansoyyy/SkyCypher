@@ -26,6 +26,13 @@ class VoiceAssistantManager {
   // Timer for continuous listening check
   Timer? _listeningCheckTimer;
 
+  // Timer for preventing too frequent restarts
+  DateTime _lastListenAttempt = DateTime.now();
+
+  // Counter to prevent infinite retries
+  int _errorRetryCount = 0;
+  static const int MAX_ERROR_RETRIES = 3;
+
   // Aircraft selection state
   bool _isSelectingAircraft = false;
   bool _isEnteringRpNumber = false;
@@ -44,7 +51,11 @@ class VoiceAssistantManager {
 
   /// Show the voice assistant dialog
   Future<void> showDialog(BuildContext context) async {
-    if (_overlayEntry != null) return;
+    print('Showing voice assistant dialog...');
+    if (_overlayEntry != null) {
+      print('Dialog already visible');
+      return;
+    }
 
     _dialogContext = context;
     _overlayEntry = OverlayEntry(
@@ -55,6 +66,7 @@ class VoiceAssistantManager {
     );
 
     Overlay.of(context).insert(_overlayEntry!);
+    print('Dialog inserted into overlay');
 
     // Start periodic check for continuous listening
     _startListeningCheck();
@@ -81,6 +93,7 @@ class VoiceAssistantManager {
     _isEnteringRpNumber = false;
     _selectedAircraft = '';
     _rpNumber = '';
+    _errorRetryCount = 0; // Reset error counter when dialog is closed
   }
 
   /// Dismiss the dialog externally
@@ -90,6 +103,7 @@ class VoiceAssistantManager {
 
   /// Initialize speech recognition
   Future<bool> initialize() async {
+    print('Initializing speech recognition...');
     _speech = stt.SpeechToText();
     try {
       bool available = await _speech!.initialize(
@@ -100,9 +114,11 @@ class VoiceAssistantManager {
       _isInitialized = available;
       _statusMessage =
           available ? 'Ready to listen' : 'Speech service not available';
+      print('Speech recognition initialized: $available');
       _updateDialogState();
       return available;
     } catch (e) {
+      print('Speech recognition initialization error: $e');
       _isInitialized = false;
       _statusMessage = 'Initialization failed: $e';
       _updateDialogState();
@@ -112,57 +128,93 @@ class VoiceAssistantManager {
 
   /// Start listening for speech
   void listen() async {
-    if (_isListening || _speech == null || !_isInitialized) {
-      // If not initialized, try to initialize first
-      if (!_isInitialized) {
-        _statusMessage = 'Initializing speech service...';
+    print('Attempting to start listening...');
+
+    // Prevent too frequent restarts (at least 1 second between attempts)
+    final now = DateTime.now();
+    if (now.difference(_lastListenAttempt).inMilliseconds < 1000) {
+      print('Throttling listen attempt, too soon since last attempt');
+      return;
+    }
+    _lastListenAttempt = now;
+
+    if (_isListening || _speech == null) {
+      print(
+          'Cannot start listening - isListening: $_isListening, speech null: ${_speech == null}');
+      return;
+    }
+
+    // If not initialized, try to initialize first
+    if (!_isInitialized) {
+      _statusMessage = 'Initializing speech service...';
+      _updateDialogState();
+
+      bool initialized = await initialize();
+      if (!initialized) {
+        _statusMessage = 'Failed to initialize speech service';
         _updateDialogState();
-
-        bool initialized = await initialize();
-        if (!initialized) {
-          _statusMessage = 'Failed to initialize speech service';
-          _updateDialogState();
-          return;
-        }
+        return;
       }
+    }
 
-      // If still not ready, return
-      if (!_isInitialized) return;
+    // Double-check initialization
+    if (!_isInitialized) {
+      print('Speech service still not initialized');
+      return;
     }
 
     _isListening = true;
     _statusMessage = 'Listening...';
+    _errorRetryCount = 0; // Reset error counter on successful listen attempt
     _updateDialogState();
 
-    _speech!.listen(
-      onResult: (result) {
-        _recognizedText = result.recognizedWords;
-        _updateDialogState();
+    print('Starting speech recognition...');
+    try {
+      _speech!.listen(
+        onResult: (result) {
+          _recognizedText = result.recognizedWords;
+          print('Recognized text: $_recognizedText');
+          print('Confidence: ${result.confidence}');
+          _updateDialogState();
 
-        // Process the command if confidence is high enough
-        if (result.confidence > 0.5) {
-          _processCommand(_recognizedText);
-        }
-      },
-      listenFor: const Duration(seconds: 30), // Listen for longer periods
-      pauseFor: const Duration(seconds: 5), // Allow longer pauses
-      localeId: 'en_US',
-    );
+          // Process the command if confidence is high enough
+          if (result.confidence > 0.5) {
+            _processCommand(_recognizedText);
+          } else {
+            print('Low confidence result: ${result.confidence}');
+          }
+        },
+        listenFor: const Duration(seconds: 30), // Listen for longer periods
+        pauseFor: const Duration(seconds: 5), // Allow longer pauses
+        localeId: 'en_US',
+      );
+    } catch (e) {
+      print('Error starting speech recognition: $e');
+      _isListening = false;
+      _statusMessage = 'Error starting recognition: $e';
+      _updateDialogState();
+    }
   }
 
   /// Stop listening
   void stop() {
     if (!_isListening || _speech == null) return;
 
-    _speech!.stop();
-    _isListening = false;
-    _statusMessage = 'Processing...';
-    _updateDialogState();
+    try {
+      _speech!.stop();
+      _isListening = false;
+      _statusMessage = 'Processing...';
+      _updateDialogState();
+      print('Stopped speech recognition');
+    } catch (e) {
+      print('Error stopping speech recognition: $e');
+    }
   }
 
   /// Process recognized command
   void _processCommand(String command) {
     final lowerCommand = command.toLowerCase().trim();
+    print('Processing command: $command');
 
     // Add to command history
     _commandHistory.add(VoiceCommand(
@@ -171,9 +223,11 @@ class VoiceAssistantManager {
       timestamp: DateTime.now(),
     ));
 
-    // Check for status command - navigate directly to aircraft status screen
-    // This will match "status" anywhere in the spoken sentence
-    if (lowerCommand.contains('status')) {
+    // Check for inspection command - navigate directly to aircraft selection
+    // This will match "inspection", "inspections", or "start inspection" anywhere in the spoken sentence
+    if (lowerCommand.contains('inspection') ||
+        lowerCommand.contains('start inspection')) {
+      print('Recognized inspection command');
       // Stop listening before navigating
       stop();
       _dismissDialog();
@@ -183,7 +237,7 @@ class VoiceAssistantManager {
             Navigator.push(
               _dialogContext!,
               MaterialPageRoute(
-                builder: (context) => const AircraftStatusScreen(),
+                builder: (context) => const AircraftSelectionScreen(),
               ),
             );
           }
@@ -195,6 +249,7 @@ class VoiceAssistantManager {
     // Check for maintenance command - navigate directly to maintenance log screen
     // This will match "maintenance" anywhere in the spoken sentence
     if (lowerCommand.contains('maintenance')) {
+      print('Recognized maintenance command');
       // Stop listening before navigating
       stop();
       _dismissDialog();
@@ -213,9 +268,10 @@ class VoiceAssistantManager {
       return;
     }
 
-    // Check for inspection command - navigate directly to aircraft selection
-    // This will match "inspection" or "inspections" anywhere in the spoken sentence
-    if (lowerCommand.contains('inspection')) {
+    // Check for status command - navigate directly to aircraft status screen
+    // This will match "status" anywhere in the spoken sentence
+    if (lowerCommand.contains('status')) {
+      print('Recognized status command');
       // Stop listening before navigating
       stop();
       _dismissDialog();
@@ -225,7 +281,7 @@ class VoiceAssistantManager {
             Navigator.push(
               _dialogContext!,
               MaterialPageRoute(
-                builder: (context) => const AircraftSelectionScreen(),
+                builder: (context) => const AircraftStatusScreen(),
               ),
             );
           }
@@ -235,91 +291,90 @@ class VoiceAssistantManager {
     }
   }
 
-  /// Start the aircraft selection process
-  void _startAircraftSelection() {
-    _isSelectingAircraft = true;
-    _statusMessage = 'Please say "Cessna 152" or "Cessna 150"';
-    _updateDialogState();
-  }
+  /// Handle speech recognition errors
+  void _onSpeechError(dynamic error) {
+    print('Speech recognition error: $error');
+    _statusMessage = 'Error: $error';
+    _isListening = false;
 
-  /// Handle aircraft selection
-  void _handleAircraftSelection(String command) {
-    final lowerCommand = command.toLowerCase().trim();
+    // Check if the error is permanent
+    bool isPermanent = false;
+    String errorMsg = '';
 
-    if (lowerCommand.contains('cessna 152') || lowerCommand.contains('152')) {
-      _selectedAircraft = 'Cessna 152';
-      _isSelectingAircraft = false;
-      _isEnteringRpNumber = true;
-      _statusMessage = 'Please say the RP number';
-      _updateDialogState();
-    } else if (lowerCommand.contains('cessna 150') ||
-        lowerCommand.contains('150')) {
-      _selectedAircraft = 'Cessna 150';
-      _isSelectingAircraft = false;
-      _isEnteringRpNumber = true;
-      _statusMessage = 'Please say the RP number';
-      _updateDialogState();
+    // Handle different error types
+    if (error is Map) {
+      isPermanent = error['permanent'] == true;
+      errorMsg = error['msg']?.toString() ?? 'Unknown error';
     } else {
-      // If aircraft not recognized, provide feedback and stay in selection mode
-      _statusMessage =
-          'Aircraft not recognized. Please say "Cessna 152" or "Cessna 150"';
-      _updateDialogState();
+      errorMsg = error.toString();
+      // For string errors, we'll assume they're permanent if they contain certain keywords
+      isPermanent = errorMsg.contains('error_busy') ||
+          errorMsg.contains('permanent: true');
     }
-  }
 
-  /// Handle RP number entry
-  void _handleRpNumberEntry(String command) {
-    // For simplicity, we'll use the recognized text as the RP number
-    _rpNumber = command.trim().toUpperCase();
+    print('Error details - Message: $errorMsg, Permanent: $isPermanent');
 
-    // Validate RP number
-    if (_rpNumber.isEmpty) {
-      _statusMessage = 'Invalid RP number. Please try again.';
+    // Check retry count
+    if (_errorRetryCount >= MAX_ERROR_RETRIES) {
+      print('Max retry count reached, not attempting to restart');
+      _statusMessage = 'Speech service unavailable. Please try again later.';
+      _errorRetryCount = 0; // Reset for next time
       _updateDialogState();
-      // Stay in RP entry mode
       return;
     }
 
-    _isEnteringRpNumber = false;
-    _statusMessage = 'Starting inspection...';
-    _updateDialogState();
+    // Special handling for speech timeout - even if marked as permanent, we might want to retry
+    if (errorMsg.contains('error_speech_timeout') && _overlayEntry != null) {
+      print('Handling timeout error - will restart listening');
+      _errorRetryCount++;
+      _statusMessage = 'Listening timeout. Ready to try again.';
+      // Restart listening after a short delay
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (_overlayEntry != null && !_isListening) {
+          print(
+              'Retrying speech recognition after timeout (attempt $_errorRetryCount)');
+          listen();
+        }
+      });
+    }
+    // For permanent errors (other than timeout), don't try to restart automatically
+    else if (isPermanent) {
+      print('Permanent error encountered, not restarting automatically');
+      _statusMessage = 'Speech service error. Please try again.';
+      _errorRetryCount = 0; // Reset counter for permanent errors
+    }
+    // If it's a busy error, we might want to retry after a delay
+    else if (errorMsg.contains('error_busy') && _overlayEntry != null) {
+      print('Handling busy error - will retry in 1 second');
+      _errorRetryCount++;
+      // Don't immediately restart, wait a bit
+      Future.delayed(const Duration(seconds: 1), () {
+        if (_overlayEntry != null && !_isListening) {
+          print(
+              'Retrying speech recognition after busy error (attempt $_errorRetryCount)');
+          listen();
+        }
+      });
+    }
+    // For other temporary errors, we can try to restart
+    else if (_overlayEntry != null) {
+      print('Temporary error, will retry');
+      _errorRetryCount++;
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (_overlayEntry != null && !_isListening) {
+          print(
+              'Retrying speech recognition after temporary error (attempt $_errorRetryCount)');
+          listen();
+        }
+      });
+    }
 
-    // Navigate to voice inspection screen with selected aircraft and RP number
-    _navigateToVoiceInspection();
-  }
-
-  /// Navigate to voice inspection screen while maintaining dialog
-  void _navigateToVoiceInspection() {
-    if (_dialogContext == null || !_dialogContext!.mounted) return;
-
-    // Dismiss the voice assistant dialog before navigating
-    _dismissDialog();
-
-    // Navigate to voice inspection screen
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_dialogContext != null && _dialogContext!.mounted) {
-        Navigator.push(
-          _dialogContext!,
-          MaterialPageRoute(
-            builder: (context) => VoiceInspectionScreen(
-              aircraftModel: _selectedAircraft,
-              rpNumber: _rpNumber,
-            ),
-          ),
-        );
-      }
-    });
-  }
-
-  /// Handle speech recognition errors
-  void _onSpeechError(dynamic error) {
-    _statusMessage = 'Error: $error';
-    _isListening = false;
     _updateDialogState();
   }
 
   /// Handle speech recognition status changes
   void _onSpeechStatus(String status) {
+    print('Speech recognition status: $status');
     // Update status message based on recognition status
     switch (status) {
       case 'listening':
@@ -330,10 +385,17 @@ class VoiceAssistantManager {
         // Automatically restart listening if it stops unexpectedly
         if (_isListening) {
           _isListening = false;
+          print('Speech recognition stopped unexpectedly, scheduling restart');
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (_overlayEntry != null) {
               // Only restart if dialog is still open
-              listen();
+              // Add a delay to prevent rapid restart loops
+              Future.delayed(const Duration(milliseconds: 500), () {
+                if (_overlayEntry != null && !_isListening) {
+                  print('Restarting speech recognition after unexpected stop');
+                  listen();
+                }
+              });
             }
           });
         }
@@ -341,6 +403,22 @@ class VoiceAssistantManager {
       case 'done':
         _statusMessage = 'Done processing';
         _isListening = false;
+        // When done, we might want to restart listening for continuous use
+        print('Speech recognition done, scheduling restart');
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_overlayEntry != null) {
+            // Add a delay to prevent rapid restart loops
+            Future.delayed(const Duration(milliseconds: 500), () {
+              if (_overlayEntry != null && !_isListening) {
+                print('Restarting speech recognition after done state');
+                listen();
+              }
+            });
+          }
+        });
+        break;
+      default:
+        _statusMessage = 'Status: $status';
         break;
     }
     _updateDialogState();
@@ -608,7 +686,7 @@ class _VoiceAssistantDialogState extends State<VoiceAssistantDialog>
     if (!widget.manager.isInitialized) {
       return 'Initializing speech service...';
     } else {
-      return 'Say "inspection", "maintenance", or "status"...';
+      return 'Say "inspection", "start inspection", "maintenance", or "status"...';
     }
   }
 }
