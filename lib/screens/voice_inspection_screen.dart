@@ -52,9 +52,17 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
 
   // Current task tracking
   int _currentTaskIndex = 0;
+  bool _taskCompleted = false; // Track if current task is explicitly completed
 
   // Timer for continuous listening check
   Timer? _listeningCheckTimer;
+  Timer? _responseTimeoutTimer; // New timer for response timeout handling
+
+  // Response timeout duration (increased from default)
+  final Duration _responseTimeout = const Duration(seconds: 60); // 60 seconds
+
+  // Debounce timer for UI updates to prevent flickering
+  Timer? _uiUpdateDebounceTimer;
 
   // Get the current inspection items based on user type and inspection type
   List<InspectionItem> get _currentInspectionItems {
@@ -116,8 +124,42 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     _startListeningCheck();
   }
 
+  // Start or reset the response timeout timer
+  void _startResponseTimeout() {
+    _responseTimeoutTimer?.cancel();
+    _responseTimeoutTimer = Timer(_responseTimeout, () {
+      if (mounted) {
+        // When timeout occurs, inform user but don't skip task
+        _debouncedSetState(() {
+          _lastRecognizedText =
+              'Still waiting for your response. Take your time.';
+        });
+
+        // Restart listening if not already listening
+        if (!_isListening) {
+          _startListening();
+        }
+
+        // Restart the timeout timer to give more time
+        _startResponseTimeout();
+      }
+    });
+  }
+
+  // Debounced setState to prevent UI flickering
+  void _debouncedSetState(VoidCallback callback) {
+    _uiUpdateDebounceTimer?.cancel();
+    _uiUpdateDebounceTimer = Timer(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        setState(() {
+          callback();
+        });
+      }
+    });
+  }
+
   void _startListeningCheck() {
-    _listeningCheckTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+    _listeningCheckTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
       if (mounted && !_isSpeaking && !_isListening) {
         print('Periodic check: Not listening, attempting to restart');
         _startListening();
@@ -464,7 +506,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   }
 
   Future<void> _initializeSpeechRecognition() async {
-    setState(() {
+    _debouncedSetState(() {
       _lastRecognizedText = 'Initializing speech recognition...';
     });
 
@@ -472,11 +514,12 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       bool available = await _speech.initialize(
         onError: (error) => _onSpeechError(error),
         onStatus: (status) => _onSpeechStatus(status),
-        finalTimeout: const Duration(seconds: 30), // Longer final timeout
+        finalTimeout: const Duration(
+            seconds: 60), // Increased final timeout to 60 seconds
       );
 
       if (available) {
-        setState(() {
+        _debouncedSetState(() {
           _lastRecognizedText = _userType != null
               ? 'Ready to listen. Say commands for ${_userType!.toLowerCase()} inspection'
               : 'Ready to listen. Say inspection commands';
@@ -485,12 +528,12 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         // Start listening automatically after initialization
         _startListening();
       } else {
-        setState(() {
+        _debouncedSetState(() {
           _lastRecognizedText = 'Speech recognition not available';
         });
       }
     } catch (e) {
-      setState(() {
+      _debouncedSetState(() {
         _lastRecognizedText = 'Error initializing speech recognition: $e';
       });
     }
@@ -508,14 +551,14 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
 
       _flutterTts.setStartHandler(() {
         print('TTS started speaking');
-        setState(() {
+        _debouncedSetState(() {
           _isSpeaking = true;
         });
       });
 
       _flutterTts.setCompletionHandler(() {
         print('TTS finished speaking');
-        setState(() {
+        _debouncedSetState(() {
           _isSpeaking = false;
         });
 
@@ -526,13 +569,15 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
             if (!_isListening) {
               _startListening();
             }
+            // Start the response timeout timer after TTS completes
+            _startResponseTimeout();
           }
         });
       });
 
       _flutterTts.setCancelHandler(() {
         print('TTS cancelled');
-        setState(() {
+        _debouncedSetState(() {
           _isSpeaking = false;
         });
 
@@ -543,13 +588,15 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
             if (!_isListening) {
               _startListening();
             }
+            // Start the response timeout timer after TTS cancels
+            _startResponseTimeout();
           }
         });
       });
 
       _flutterTts.setErrorHandler((msg) {
         print('TTS Error: $msg');
-        setState(() {
+        _debouncedSetState(() {
           _isSpeaking = false;
           _lastRecognizedText = 'TTS Error: $msg';
         });
@@ -567,7 +614,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       // await _flutterTts.speak("Text to speech is ready");
     } catch (e) {
       print('Error initializing TTS: $e');
-      setState(() {
+      _debouncedSetState(() {
         _lastRecognizedText = 'Error initializing TTS: $e';
       });
     }
@@ -575,7 +622,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
 
   void _onSpeechError(dynamic error) {
     print('Speech recognition error: $error');
-    setState(() {
+    _debouncedSetState(() {
       _lastRecognizedText = 'Speech recognition error: $error';
       _isListening = false;
       _isProcessing = false;
@@ -611,13 +658,15 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     _waveController.dispose();
     _flutterTts.stop();
     _listeningCheckTimer?.cancel(); // Cancel the periodic check timer
+    _responseTimeoutTimer?.cancel(); // Cancel the response timeout timer
+    _uiUpdateDebounceTimer?.cancel(); // Cancel the UI update debounce timer
     super.dispose();
   }
 
   void _startListening() async {
     if (_isListening) return;
 
-    setState(() {
+    _debouncedSetState(() {
       _isListening = true;
       _currentCommand = '';
       _lastRecognizedText = 'Listening...';
@@ -631,7 +680,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       // Start listening for speech with continuous listening parameters
       _speech.listen(
         onResult: (result) {
-          setState(() {
+          _debouncedSetState(() {
             _currentCommand = result.recognizedWords;
             _lastRecognizedText = 'Recognized: "$_currentCommand"';
           });
@@ -639,13 +688,14 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
           // Process the command immediately
           _processCommand(_currentCommand);
         },
-        listenFor: const Duration(seconds: 30), // Listen for longer periods
-        pauseFor: const Duration(seconds: 5), // Allow longer pauses
+        listenFor: const Duration(seconds: 60), // Increased to 60 seconds
+        pauseFor:
+            const Duration(seconds: 10), // Increased pause time to 10 seconds
         localeId: 'en_US',
       );
     } catch (e) {
       print('Error starting speech recognition: $e');
-      setState(() {
+      _debouncedSetState(() {
         _isListening = false;
         _lastRecognizedText = 'Error starting speech recognition: $e';
       });
@@ -664,7 +714,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   void _stopListening() {
     if (!_isListening) return;
 
-    setState(() {
+    _debouncedSetState(() {
       _isListening = false;
       _isProcessing = true;
     });
@@ -683,7 +733,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       _processCommand(_currentCommand);
     }
 
-    setState(() {
+    _debouncedSetState(() {
       _isProcessing = false;
     });
   }
@@ -698,47 +748,58 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     if (_currentTaskIndex < _currentInspectionItems.length) {
       final currentItem = _currentInspectionItems[_currentTaskIndex];
 
-      // Check for completion commands
-      if (lowerCommand == 'done' ||
-          lowerCommand == 'completed' ||
-          lowerCommand == 'check') {
-        setState(() {
+      // Check for completion commands - only move to next task with explicit confirmation
+      if ((lowerCommand == 'done' ||
+              lowerCommand == 'completed' ||
+              lowerCommand == 'check' ||
+              lowerCommand.contains('done') ||
+              lowerCommand.contains('completed') ||
+              lowerCommand.contains('okay') ||
+              lowerCommand.contains('ok')) &&
+          !_taskCompleted) {
+        // Prevent duplicate processing
+        _debouncedSetState(() {
           currentItem.isCompleted = true;
           currentItem.completedAt = DateTime.now();
           currentItem.hasWarning = false; // Clear any warning
+          _taskCompleted = true; // Mark task as explicitly completed
         });
         HapticFeedback.lightImpact();
         _lastRecognizedText = 'Task completed: ${currentItem.title}';
 
         print('Task completed: ${currentItem.title}, moving to next task');
 
-        // Move to next task
-        _currentTaskIndex++;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Move to next task after a delay to allow user to hear confirmation
+        Future.delayed(const Duration(seconds: 2), () {
           if (mounted) {
-            _readCurrentTask();
+            _nextTask();
           }
         });
         return;
       }
 
       // Check for warning commands
-      if (lowerCommand == 'not completed' || lowerCommand == 'problem') {
-        setState(() {
+      if ((lowerCommand == 'not completed' ||
+              lowerCommand == 'problem' ||
+              lowerCommand.contains('not completed') ||
+              lowerCommand.contains('problem')) &&
+          !_taskCompleted) {
+        // Prevent duplicate processing
+        _debouncedSetState(() {
           currentItem.isCompleted = false;
           currentItem.hasWarning = true;
           currentItem.warningAt = DateTime.now();
+          _taskCompleted = true; // Mark task as explicitly completed
         });
         HapticFeedback.mediumImpact();
         _lastRecognizedText = 'Task has issue: ${currentItem.title}';
 
         print('Task has warning: ${currentItem.title}, moving to next task');
 
-        // Move to next task
-        _currentTaskIndex++;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Move to next task after a delay to allow user to hear confirmation
+        Future.delayed(const Duration(seconds: 2), () {
           if (mounted) {
-            _readCurrentTask();
+            _nextTask();
           }
         });
         return;
@@ -757,7 +818,8 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
 
     // If we get here, the command wasn't recognized, but we should keep listening
     // Don't stop listening - just inform the user and continue
-    _lastRecognizedText = 'Command not recognized. Please try again.';
+    _lastRecognizedText =
+        'Command not recognized. Please say "done" when finished or "problem" if there is an issue.';
     print('Command not recognized: $command');
 
     // Ensure we're still listening
@@ -770,18 +832,39 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     }
   }
 
+  // Method to move to the next task
+  void _nextTask() {
+    // Reset task completion flag for next task
+    _taskCompleted = false;
+
+    // Cancel any existing response timeout timer
+    _responseTimeoutTimer?.cancel();
+
+    // Move to next task
+    _currentTaskIndex++;
+
+    // Reset command for next task
+    _currentCommand = '';
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _readCurrentTask();
+      }
+    });
+  }
+
   Future<void> _readCurrentTask() async {
     print('Reading task at index: $_currentTaskIndex');
     if (_currentTaskIndex < _currentInspectionItems.length) {
       final currentItem = _currentInspectionItems[_currentTaskIndex];
       // Make the AI more conversational
       final textToSpeak = _currentTaskIndex == 0
-          ? 'Starting $_inspectionType Checklist for ${widget.aircraftModel}. Please check the ${currentItem.title.toLowerCase()}.'
-          : 'Please check the ${currentItem.title.toLowerCase()}.';
+          ? 'Starting $_inspectionType Checklist for ${widget.aircraftModel}. Please check the ${currentItem.title.toLowerCase()}. Say "done" when completed or "problem" if there is an issue.'
+          : 'Please check the ${currentItem.title.toLowerCase()}. Say "done" when completed or "problem" if there is an issue.';
 
       print('Reading task: $textToSpeak'); // Debug log
 
-      setState(() {
+      _debouncedSetState(() {
         _lastRecognizedText = 'Reading task: $textToSpeak';
       });
 
@@ -796,7 +879,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         await _flutterTts.speak(textToSpeak);
       } catch (e) {
         print('Error speaking task: $e');
-        setState(() {
+        _debouncedSetState(() {
           _lastRecognizedText = 'Error reading task: $e';
         });
         // Retry the same task instead of skipping to the next one
@@ -1100,11 +1183,14 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
                     }).toList(),
                     onChanged: (String? newValue) {
                       if (newValue != null) {
-                        setState(() {
+                        _debouncedSetState(() {
                           _inspectionType = newValue;
                           _currentTaskIndex =
                               0; // Reset to first task when changing inspection type
+                          _taskCompleted = false; // Reset task completion flag
                         });
+                        // Cancel any existing timers
+                        _responseTimeoutTimer?.cancel();
                         // Restart the inspection with the new type
                         Future.delayed(const Duration(milliseconds: 300), () {
                           _readCurrentTask();
@@ -1229,7 +1315,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
 
                 Text(
                   _isListening
-                      ? 'Listening... Speak commands naturally'
+                      ? 'Listening... Speak commands naturally. Say "done" or "problem"'
                       : 'Initializing hands-free inspection',
                   textAlign: TextAlign.center,
                   style: TextStyle(
