@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:skycypher/screens/simplified_voice_inspection_screen.dart';
 import 'package:skycypher/utils/colors.dart' as app_colors;
 import 'package:skycypher/screens/voice_inspection_screen.dart';
 import 'package:skycypher/models/aircraft.dart';
@@ -457,7 +458,7 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
                 Navigator.of(context).push(
                   PageRouteBuilder(
                     pageBuilder: (context, animation, secondaryAnimation) =>
-                        VoiceInspectionScreen(
+                        SimplifiedVoiceInspectionScreen(
                       aircraftModel: title,
                       rpNumber: _selectedRpNumber!,
                     ),

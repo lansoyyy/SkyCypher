@@ -1,1558 +1,1558 @@
-import 'dart:ui';
-import 'dart:async'; // Add this import for Timer
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:skycypher/utils/colors.dart' as app_colors;
-import 'package:speech_to_text/speech_to_text.dart' as stt;
-import 'package:skycypher/services/auth_service.dart';
-import 'package:flutter_tts/flutter_tts.dart';
-
-class VoiceInspectionScreen extends StatefulWidget {
-  final String aircraftModel;
-  final String rpNumber;
-
-  const VoiceInspectionScreen({
-    super.key,
-    required this.aircraftModel,
-    required this.rpNumber,
-  });
-
-  @override
-  State<VoiceInspectionScreen> createState() => _VoiceInspectionScreenState();
-}
-
-class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
-    with TickerProviderStateMixin {
-  late AnimationController _pulseController;
-  late AnimationController _waveController;
-  late Animation<double> _pulseAnimation;
-  late Animation<double> _waveAnimation;
-
-  // Speech to text implementation
-  late stt.SpeechToText _speech;
-  bool _isListening = false;
-  bool _isProcessing = false;
-  String _currentCommand = '';
-  String _lastRecognizedText = 'Initializing...';
-  String? _userType;
-
-  // Inspection type for mechanics
-  String _inspectionType = 'Pre-Flight'; // Default to Pre-Flight
-  final List<String> _inspectionTypes = ['Pre-Flight', 'Maintenance'];
-
-  // Text to speech implementation
-  late FlutterTts _flutterTts;
-  bool _isSpeaking = false;
-
-  // Inspection checklists for different user types
-  List<InspectionItem> _pilotInspectionItems = [];
-  List<InspectionItem> _mechanicInspectionItems = [];
-  List<InspectionItem> _mechanicMaintenanceItems =
-      []; // New list for maintenance items
-
-  // Current task tracking
-  int _currentTaskIndex = 0;
-  bool _taskCompleted = false; // Track if current task is explicitly completed
-
-  // Timer for continuous listening check
-  Timer? _listeningCheckTimer;
-  Timer? _responseTimeoutTimer; // New timer for response timeout handling
-
-  // Response timeout duration (increased from default)
-  final Duration _responseTimeout = const Duration(seconds: 60); // 60 seconds
-
-  // Debounce timer for UI updates to prevent flickering
-  Timer? _uiUpdateDebounceTimer;
-
-  // Get the current inspection items based on user type and inspection type
-  List<InspectionItem> get _currentInspectionItems {
-    if (_userType == 'Mechanic') {
-      // Return maintenance items if mechanic selected maintenance, otherwise regular mechanic items
-      return _inspectionType == 'Maintenance'
-          ? _mechanicMaintenanceItems
-          : _mechanicInspectionItems;
-    } else {
-      // Default to pilot items for Pilot user type or if user type is not set
-      return _pilotInspectionItems;
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-
-    // Fetch user data to determine user type
-    _fetchUserData();
-
-    // Initialize speech to text
-    _speech = stt.SpeechToText();
-    _initializeSpeechRecognition();
-
-    // Initialize text to speech
-    _flutterTts = FlutterTts();
-    _initializeTextToSpeech().then((_) {
-      print('TTS initialization completed');
-    });
-
-    _pulseController = AnimationController(
-      duration: const Duration(milliseconds: 1500),
-      vsync: this,
-    );
-
-    _waveController = AnimationController(
-      duration: const Duration(milliseconds: 2000),
-      vsync: this,
-    );
-
-    _pulseAnimation = Tween<double>(
-      begin: 0.8,
-      end: 1.2,
-    ).animate(CurvedAnimation(
-      parent: _pulseController,
-      curve: Curves.easeInOut,
-    ));
-
-    _waveAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _waveController,
-      curve: Curves.easeInOut,
-    ));
-
-    // Start periodic check for continuous listening
-    _startListeningCheck();
-  }
-
-  // Start or reset the response timeout timer
-  void _startResponseTimeout() {
-    _responseTimeoutTimer?.cancel();
-    _responseTimeoutTimer = Timer(_responseTimeout, () {
-      if (mounted) {
-        // When timeout occurs, inform user but don't skip task
-        _debouncedSetState(() {
-          _lastRecognizedText =
-              'Still waiting for your response. Take your time.';
-        });
-
-        // Restart listening if not already listening
-        if (!_isListening) {
-          _startListening();
-        }
-
-        // Restart the timeout timer to give more time
-        _startResponseTimeout();
-      }
-    });
-  }
-
-  // Debounced setState to prevent UI flickering
-  void _debouncedSetState(VoidCallback callback) {
-    _uiUpdateDebounceTimer?.cancel();
-    _uiUpdateDebounceTimer = Timer(const Duration(milliseconds: 100), () {
-      if (mounted) {
-        setState(() {
-          callback();
-        });
-      }
-    });
-  }
-
-  void _startListeningCheck() {
-    _listeningCheckTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
-      if (mounted && !_isSpeaking && !_isListening) {
-        print('Periodic check: Not listening, attempting to restart');
-        _startListening();
-      }
-    });
-  }
-
-  Future<void> _fetchUserData() async {
-    try {
-      final userData = await AuthService.getUserData();
-      if (userData != null && userData['userType'] != null) {
-        setState(() {
-          _userType = userData['userType'] as String;
-        });
-      }
-      // Initialize inspection items after user type is determined
-      _initializeInspectionItems();
-    } catch (e) {
-      print('Error fetching user data: $e');
-      // Initialize with default items if user data fetch fails
-      _initializeInspectionItems();
-    }
-  }
-
-  void _initializeInspectionItems() {
-    // Mechanic inspection items (number 1 & 2 in your PDF)
-    _pilotInspectionItems = [
-      InspectionItem(
-        id: 'fuel_tank_quality',
-        title: 'Fuel Tank Quality',
-        description:
-            'Check fuel tank for contamination, proper fuel level and quality',
-        commands: ['fuel tank quality', 'check fuel tank', 'inspect fuel tank'],
-      ),
-      InspectionItem(
-        id: 'sump_drain',
-        title: 'Sump Drain',
-        description:
-            'Drain sump and check for water, sediment or other contaminants',
-        commands: ['sump drain', 'check sump', 'inspect sump drain'],
-      ),
-      InspectionItem(
-        id: 'leading_edge',
-        title: 'Leading Edge',
-        description: 'Inspect leading edge for damage, dents or wear',
-        commands: [
-          'leading edge',
-          'check leading edge',
-          'inspect leading edge'
-        ],
-      ),
-      InspectionItem(
-        id: 'aileron',
-        title: 'Aileron',
-        description:
-            'Check aileron hinges, control surfaces and attachment points',
-        commands: ['aileron', 'check aileron', 'inspect aileron'],
-      ),
-      InspectionItem(
-        id: 'flap',
-        title: 'Flap',
-        description:
-            'Inspect flaps for damage, proper operation and attachment',
-        commands: ['flap', 'check flap', 'inspect flap'],
-      ),
-      InspectionItem(
-        id: 'tire',
-        title: 'Tire',
-        description: 'Check tire condition, pressure and tread wear',
-        commands: ['tire', 'check tire', 'inspect tire'],
-      ),
-      InspectionItem(
-        id: 'brake',
-        title: 'Brake',
-        description: 'Inspect brake pads, discs and hydraulic connections',
-        commands: ['brake', 'check brake', 'inspect brake'],
-      ),
-      InspectionItem(
-        id: 'fuselage_tail',
-        title: 'Fuselage / Tail Inspection',
-        description:
-            'Fuselage surface, stabilizer, elevator, rudder, tail tie-down',
-        commands: [
-          'fuselage inspection',
-          'check fuselage',
-          'inspect fuselage and tail'
-        ],
-      ),
-      InspectionItem(
-        id: 'nose_section',
-        title: 'Nose Section Inspection',
-        description:
-            'Windshield, oil level, belly sump, propeller, spinner, static port',
-        commands: ['nose inspection', 'check nose section', 'inspect nose'],
-      ),
-      InspectionItem(
-        id: 'right_wing',
-        title: 'Right Wing / Fuselage Inspection',
-        description: 'Repeat inspections from left side',
-        commands: [
-          'right wing inspection',
-          'check right wing',
-          'inspect right wing'
-        ],
-      ),
-      InspectionItem(
-        id: 'final_walkaround',
-        title: 'Final Walk-Around Pass',
-        description: 'Panels, caps, chocks, covers secured',
-        commands: [
-          'final walkaround',
-          'final inspection',
-          'complete walkaround'
-        ],
-      ),
-      InspectionItem(
-        id: 'cockpit_before_start',
-        title: 'Cockpit / Before Start',
-        description:
-            'Seats, doors, avionics, master switch, flaps, control lock',
-        commands: ['cockpit check', 'check cockpit', 'cockpit inspection'],
-      ),
-    ];
-
-    _mechanicInspectionItems = [
-      // Pre Flight Category
-      InspectionItem(
-        id: 'fuel_tank_quality',
-        title: 'Fuel Tank Quality',
-        description:
-            'Check fuel tank for contamination, proper fuel level and quality',
-        commands: ['fuel tank quality', 'check fuel tank', 'inspect fuel tank'],
-      ),
-      InspectionItem(
-        id: 'sump_drain',
-        title: 'Sump Drain',
-        description:
-            'Drain sump and check for water, sediment or other contaminants',
-        commands: ['sump drain', 'check sump', 'inspect sump drain'],
-      ),
-      InspectionItem(
-        id: 'leading_edge',
-        title: 'Leading Edge',
-        description: 'Inspect leading edge for damage, dents or wear',
-        commands: [
-          'leading edge',
-          'check leading edge',
-          'inspect leading edge'
-        ],
-      ),
-      InspectionItem(
-        id: 'aileron',
-        title: 'Aileron',
-        description:
-            'Check aileron hinges, control surfaces and attachment points',
-        commands: ['aileron', 'check aileron', 'inspect aileron'],
-      ),
-      InspectionItem(
-        id: 'flap',
-        title: 'Flap',
-        description:
-            'Inspect flaps for damage, proper operation and attachment',
-        commands: ['flap', 'check flap', 'inspect flap'],
-      ),
-      InspectionItem(
-        id: 'tire',
-        title: 'Tire',
-        description: 'Check tire condition, pressure and tread wear',
-        commands: ['tire', 'check tire', 'inspect tire'],
-      ),
-      InspectionItem(
-        id: 'brake',
-        title: 'Brake',
-        description: 'Inspect brake pads, discs and hydraulic connections',
-        commands: ['brake', 'check brake', 'inspect brake'],
-      ),
-      InspectionItem(
-        id: 'fuselage_tail',
-        title: 'Fuselage / Tail Inspection',
-        description:
-            'Fuselage surface, stabilizer, elevator, rudder, tail tie-down',
-        commands: [
-          'fuselage inspection',
-          'check fuselage',
-          'inspect fuselage and tail'
-        ],
-      ),
-      InspectionItem(
-        id: 'nose_section',
-        title: 'Nose Section Inspection',
-        description:
-            'Windshield, oil level, belly sump, propeller, spinner, static port',
-        commands: ['nose inspection', 'check nose section', 'inspect nose'],
-      ),
-      InspectionItem(
-        id: 'right_wing',
-        title: 'Right Wing / Fuselage Inspection',
-        description: 'Repeat inspections from left side',
-        commands: [
-          'right wing inspection',
-          'check right wing',
-          'inspect right wing'
-        ],
-      ),
-      InspectionItem(
-        id: 'final_walkaround',
-        title: 'Final Walk-Around Pass',
-        description: 'Panels, caps, chocks, covers secured',
-        commands: [
-          'final walkaround',
-          'final inspection',
-          'complete walkaround'
-        ],
-      ),
-      InspectionItem(
-        id: 'cockpit_before_start',
-        title: 'Cockpit / Before Start',
-        description:
-            'Seats, doors, avionics, master switch, flaps, control lock',
-        commands: ['cockpit check', 'check cockpit', 'cockpit inspection'],
-      ),
-    ];
-
-    // Maintenance items for mechanics (more comprehensive)
-    _mechanicMaintenanceItems = [
-      InspectionItem(
-        id: 'airframe_structural',
-        title: 'Airframe / Structural Inspection',
-        description: 'Fuselage, wings, tail surfaces, rivets, skin integrity',
-        commands: ['airframe inspection', 'check airframe', 'inspect airframe'],
-      ),
-      InspectionItem(
-        id: 'cabin_cockpit',
-        title: 'Cabin / Cockpit Inspection',
-        description: 'Seats, safety belts, windows, flight controls',
-        commands: ['cabin inspection', 'check cabin', 'inspect cabin'],
-      ),
-      InspectionItem(
-        id: 'engine_nacelle',
-        title: 'Engine / Nacelle Inspection',
-        description: 'Leaks, mounting, cables, hoses, exhaust, cleanliness',
-        commands: ['engine inspection', 'check engine', 'inspect engine'],
-      ),
-      InspectionItem(
-        id: 'landing_gear',
-        title: 'Landing Gear / Wheels Inspection',
-        description: 'Gear assemblies, tires, brakes, shock strut',
-        commands: [
-          'landing gear inspection',
-          'check landing gear',
-          'inspect landing gear'
-        ],
-      ),
-      InspectionItem(
-        id: 'propeller_spinner',
-        title: 'Propeller / Spinner Inspection',
-        description: 'Blades, cracks, nicks, spinner, mounting bolts',
-        commands: [
-          'propeller inspection',
-          'check propeller',
-          'inspect propeller'
-        ],
-      ),
-      InspectionItem(
-        id: 'electrical_avionics',
-        title: 'Electrical / Avionics Inspection',
-        description: 'Wiring, conduits, antennas, secure installation',
-        commands: [
-          'electrical inspection',
-          'check electrical',
-          'inspect electrical'
-        ],
-      ),
-      InspectionItem(
-        id: 'fuel_system',
-        title: 'Fuel System Inspection',
-        description: 'Tanks, lines, filters, pumps, vents, drains',
-        commands: [
-          'fuel system inspection',
-          'check fuel system',
-          'inspect fuel system'
-        ],
-      ),
-      InspectionItem(
-        id: 'hydraulic_system',
-        title: 'Hydraulic System Inspection',
-        description: 'Reservoirs, lines, pumps, actuators, leaks',
-        commands: [
-          'hydraulic system inspection',
-          'check hydraulic system',
-          'inspect hydraulic system'
-        ],
-      ),
-      InspectionItem(
-        id: 'instrument_panel',
-        title: 'Instrument Panel Inspection',
-        description: 'Gauges, indicators, warning systems, calibration',
-        commands: [
-          'instrument panel inspection',
-          'check instrument panel',
-          'inspect instrument panel'
-        ],
-      ),
-      InspectionItem(
-        id: 'navigation_lights',
-        title: 'Navigation Lights Inspection',
-        description: 'Position lights, strobes, landing lights, wiring',
-        commands: [
-          'navigation lights inspection',
-          'check navigation lights',
-          'inspect navigation lights'
-        ],
-      ),
-      InspectionItem(
-        id: 'communication_system',
-        title: 'Communication System Inspection',
-        description: 'Radios, intercom, antennas, audio panels',
-        commands: [
-          'communication system inspection',
-          'check communication system',
-          'inspect communication system'
-        ],
-      ),
-      InspectionItem(
-        id: 'pitot_static_system',
-        title: 'Pitot Static System Inspection',
-        description: 'Pitot tubes, static ports, heating, lines',
-        commands: [
-          'pitot static system inspection',
-          'check pitot static system',
-          'inspect pitot static system'
-        ],
-      ),
-    ];
-
-    // Start reading the first task after a short delay to ensure everything is initialized
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted && _currentInspectionItems.isNotEmpty) {
-          _readCurrentTask();
-        }
-      });
-    });
-  }
-
-  Future<void> _initializeSpeechRecognition() async {
-    _debouncedSetState(() {
-      _lastRecognizedText = 'Initializing speech recognition...';
-    });
-
-    try {
-      bool available = await _speech.initialize(
-        onError: (error) => _onSpeechError(error),
-        onStatus: (status) => _onSpeechStatus(status),
-        finalTimeout: const Duration(
-            seconds: 60), // Increased final timeout to 60 seconds
-      );
-
-      if (available) {
-        _debouncedSetState(() {
-          _lastRecognizedText = _userType != null
-              ? 'Ready to listen. Say commands for ${_userType!.toLowerCase()} inspection'
-              : 'Ready to listen. Say inspection commands';
-        });
-
-        // Start listening automatically after initialization
-        _startListening();
-      } else {
-        _debouncedSetState(() {
-          _lastRecognizedText = 'Speech recognition not available';
-        });
-      }
-    } catch (e) {
-      _debouncedSetState(() {
-        _lastRecognizedText = 'Error initializing speech recognition: $e';
-      });
-    }
-  }
-
-  Future<void> _initializeTextToSpeech() async {
-    try {
-      await _flutterTts.setLanguage("en-US");
-      await _flutterTts.setSpeechRate(0.45); // Slightly slower for clarity
-      await _flutterTts.setVolume(1.0);
-      await _flutterTts
-          .setPitch(1.1); // Slightly higher pitch for clearer voice
-
-      print('TTS initialized successfully');
-
-      _flutterTts.setStartHandler(() {
-        print('TTS started speaking');
-        _debouncedSetState(() {
-          _isSpeaking = true;
-        });
-      });
-
-      _flutterTts.setCompletionHandler(() {
-        print('TTS finished speaking');
-        _debouncedSetState(() {
-          _isSpeaking = false;
-        });
-
-        // After speaking a task, ensure we're listening for user response
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted) {
-            // Ensure continuous listening - restart if needed
-            if (!_isListening) {
-              _startListening();
-            }
-            // Start the response timeout timer after TTS completes
-            _startResponseTimeout();
-          }
-        });
-      });
-
-      _flutterTts.setCancelHandler(() {
-        print('TTS cancelled');
-        _debouncedSetState(() {
-          _isSpeaking = false;
-        });
-
-        // Ensure we're still listening after cancellation
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted) {
-            // Ensure continuous listening - restart if needed
-            if (!_isListening) {
-              _startListening();
-            }
-            // Start the response timeout timer after TTS cancels
-            _startResponseTimeout();
-          }
-        });
-      });
-
-      _flutterTts.setErrorHandler((msg) {
-        print('TTS Error: $msg');
-        _debouncedSetState(() {
-          _isSpeaking = false;
-          _lastRecognizedText = 'TTS Error: $msg';
-        });
-        // Retry the same task instead of skipping to the next one
-        Future.delayed(const Duration(milliseconds: 1000), () {
-          if (mounted) {
-            _readCurrentTask(); // Retry the same task
-          }
-        });
-      });
-
-      // Test TTS with a simple phrase to ensure it's working
-      await Future.delayed(const Duration(milliseconds: 1000));
-      print('Testing TTS with sample phrase');
-      // await _flutterTts.speak("Text to speech is ready");
-    } catch (e) {
-      print('Error initializing TTS: $e');
-      _debouncedSetState(() {
-        _lastRecognizedText = 'Error initializing TTS: $e';
-      });
-    }
-  }
-
-  void _onSpeechError(dynamic error) {
-    print('Speech recognition error: $error');
-    _debouncedSetState(() {
-      _lastRecognizedText = 'Speech recognition error: $error';
-      _isListening = false;
-      _isProcessing = false;
-    });
-    _pulseController.stop();
-    _waveController.stop();
-
-    // Automatically restart listening after an error
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        _startListening();
-      }
-    });
-  }
-
-  void _onSpeechStatus(String status) {
-    print('Speech recognition status: $status');
-    // Handle speech recognition status changes if needed
-    // Restart listening if it stops unexpectedly
-    if (status == 'notListening' && mounted) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted && !_isSpeaking) {
-          _startListening();
-        }
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _stopListening(); // Stop listening when screen is disposed
-    _pulseController.dispose();
-    _waveController.dispose();
-    _flutterTts.stop();
-    _listeningCheckTimer?.cancel(); // Cancel the periodic check timer
-    _responseTimeoutTimer?.cancel(); // Cancel the response timeout timer
-    _uiUpdateDebounceTimer?.cancel(); // Cancel the UI update debounce timer
-    super.dispose();
-  }
-
-  void _startListening() async {
-    if (_isListening) return;
-
-    _debouncedSetState(() {
-      _isListening = true;
-      _currentCommand = '';
-      _lastRecognizedText = 'Listening...';
-    });
-
-    HapticFeedback.heavyImpact();
-    _pulseController.repeat(reverse: true);
-    _waveController.repeat();
-
-    try {
-      // Start listening for speech with continuous listening parameters
-      _speech.listen(
-        onResult: (result) {
-          _debouncedSetState(() {
-            _currentCommand = result.recognizedWords;
-            _lastRecognizedText = 'Recognized: "$_currentCommand"';
-          });
-
-          // Process the command immediately
-          _processCommand(_currentCommand);
-        },
-        listenFor: const Duration(seconds: 60), // Increased to 60 seconds
-        pauseFor:
-            const Duration(seconds: 10), // Increased pause time to 10 seconds
-        localeId: 'en_US',
-      );
-    } catch (e) {
-      print('Error starting speech recognition: $e');
-      _debouncedSetState(() {
-        _isListening = false;
-        _lastRecognizedText = 'Error starting speech recognition: $e';
-      });
-      _pulseController.stop();
-      _waveController.stop();
-
-      // Retry listening after a short delay
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) {
-          _startListening();
-        }
-      });
-    }
-  }
-
-  void _stopListening() {
-    if (!_isListening) return;
-
-    _debouncedSetState(() {
-      _isListening = false;
-      _isProcessing = true;
-    });
-
-    try {
-      _speech.stop();
-    } catch (e) {
-      print('Error stopping speech recognition: $e');
-    }
-
-    _pulseController.stop();
-    _waveController.stop();
-
-    // Process any final command only if it's not empty
-    if (_currentCommand.isNotEmpty && _currentCommand.trim().isNotEmpty) {
-      _processCommand(_currentCommand);
-    }
-
-    _debouncedSetState(() {
-      _isProcessing = false;
-    });
-  }
-
-  void _processCommand(String command) {
-    final lowerCommand = command.toLowerCase().trim();
-
-    print(
-        'Processing command: $command, current task index: $_currentTaskIndex');
-
-    // Handle specific commands for task completion
-    if (_currentTaskIndex < _currentInspectionItems.length) {
-      final currentItem = _currentInspectionItems[_currentTaskIndex];
-
-      // Check for completion commands - only move to next task with explicit confirmation
-      if ((lowerCommand == 'done' ||
-              lowerCommand == 'completed' ||
-              lowerCommand == 'check' ||
-              lowerCommand.contains('done') ||
-              lowerCommand.contains('completed') ||
-              lowerCommand.contains('okay') ||
-              lowerCommand.contains('ok')) &&
-          !_taskCompleted) {
-        // Prevent duplicate processing
-        _debouncedSetState(() {
-          currentItem.isCompleted = true;
-          currentItem.completedAt = DateTime.now();
-          currentItem.hasWarning = false; // Clear any warning
-          _taskCompleted = true; // Mark task as explicitly completed
-        });
-        HapticFeedback.lightImpact();
-        _lastRecognizedText = 'Task completed: ${currentItem.title}';
-
-        print('Task completed: ${currentItem.title}, moving to next task');
-
-        // Move to next task after a delay to allow user to hear confirmation
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) {
-            _nextTask();
-          }
-        });
-        return;
-      }
-
-      // Check for warning commands
-      if ((lowerCommand == 'not completed' ||
-              lowerCommand == 'problem' ||
-              lowerCommand.contains('not completed') ||
-              lowerCommand.contains('problem')) &&
-          !_taskCompleted) {
-        // Prevent duplicate processing
-        _debouncedSetState(() {
-          currentItem.isCompleted = false;
-          currentItem.hasWarning = true;
-          currentItem.warningAt = DateTime.now();
-          _taskCompleted = true; // Mark task as explicitly completed
-        });
-        HapticFeedback.mediumImpact();
-        _lastRecognizedText = 'Task has issue: ${currentItem.title}';
-
-        print('Task has warning: ${currentItem.title}, moving to next task');
-
-        // Move to next task after a delay to allow user to hear confirmation
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) {
-            _nextTask();
-          }
-        });
-        return;
-      }
-    }
-
-    // Handle general completion command
-    if (lowerCommand.contains('complete') ||
-        lowerCommand.contains('finish') ||
-        lowerCommand.contains('inspection complete')) {
-      if (mounted) {
-        _showCompletionDialog();
-      }
-      return;
-    }
-
-    // If we get here, the command wasn't recognized, but we should keep listening
-    // Don't stop listening - just inform the user and continue
-    _lastRecognizedText =
-        'Command not recognized. Please say "done" when finished or "problem" if there is an issue.';
-    print('Command not recognized: $command');
-
-    // Ensure we're still listening
-    if (!_isListening && mounted) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted && !_isListening) {
-          _startListening();
-        }
-      });
-    }
-  }
-
-  // Method to move to the next task
-  void _nextTask() {
-    // Reset task completion flag for next task
-    _taskCompleted = false;
-
-    // Cancel any existing response timeout timer
-    _responseTimeoutTimer?.cancel();
-
-    // Move to next task
-    _currentTaskIndex++;
-
-    // Reset command for next task
-    _currentCommand = '';
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _readCurrentTask();
-      }
-    });
-  }
-
-  Future<void> _readCurrentTask() async {
-    print('Reading task at index: $_currentTaskIndex');
-    if (_currentTaskIndex < _currentInspectionItems.length) {
-      final currentItem = _currentInspectionItems[_currentTaskIndex];
-      // Make the AI more conversational
-      final textToSpeak = _currentTaskIndex == 0
-          ? 'Starting $_inspectionType Checklist for ${widget.aircraftModel}. Please check the ${currentItem.title.toLowerCase()}. Say "done" when completed or "problem" if there is an issue.'
-          : 'Please check the ${currentItem.title.toLowerCase()}. Say "done" when completed or "problem" if there is an issue.';
-
-      print('Reading task: $textToSpeak'); // Debug log
-
-      _debouncedSetState(() {
-        _lastRecognizedText = 'Reading task: $textToSpeak';
-      });
-
-      // Don't stop listening while speaking - keep listening continuously
-      // _stopListening(); // Removed this line - we keep listening
-
-      try {
-        // Add a small delay to ensure TTS is ready
-        await Future.delayed(const Duration(milliseconds: 100));
-
-        // Speak the task
-        await _flutterTts.speak(textToSpeak);
-      } catch (e) {
-        print('Error speaking task: $e');
-        _debouncedSetState(() {
-          _lastRecognizedText = 'Error reading task: $e';
-        });
-        // Retry the same task instead of skipping to the next one
-        Future.delayed(const Duration(milliseconds: 1000), () {
-          if (mounted) {
-            _readCurrentTask(); // Retry the same task
-          }
-        });
-        return;
-      }
-
-      // Ensure we're still listening after speaking
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted && !_isListening) {
-          _startListening();
-        }
-      });
-    } else {
-      // All tasks completed, show summary
-      print('All tasks completed, showing summary');
-      if (mounted) {
-        _showCompletionDialog();
-      }
-    }
-  }
-
-  void _showCompletionDialog() {
-    final completedItems =
-        _currentInspectionItems.where((item) => item.isCompleted).length;
-    final warningItems =
-        _currentInspectionItems.where((item) => item.hasWarning).length;
-    final totalItems = _currentInspectionItems.length;
-    final pendingItems = totalItems - completedItems - warningItems;
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: app_colors.primary,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Inspection Summary',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Aircraft: ${widget.aircraftModel}',
-              style: TextStyle(color: Colors.white.withOpacity(0.9)),
-            ),
-            Text(
-              'RP Number: ${widget.rpNumber}',
-              style: TextStyle(color: Colors.white.withOpacity(0.9)),
-            ),
-            Text(
-              'User Type: ${_userType ?? "Unknown"}',
-              style: TextStyle(color: Colors.white.withOpacity(0.9)),
-            ),
-            if (_userType == 'Mechanic') ...[
-              const SizedBox(height: 8),
-              Text(
-                'Inspection Type: $_inspectionType',
-                style: TextStyle(color: Colors.white.withOpacity(0.9)),
-              ),
-            ],
-            const SizedBox(height: 16),
-            Text(
-              'Completed: $completedItems/$totalItems items',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            if (warningItems > 0) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Warnings: $warningItems items with issues',
-                style: const TextStyle(
-                  color: Colors.orange,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-            if (pendingItems > 0) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Pending: $pendingItems items not addressed',
-                style: const TextStyle(
-                  color: Colors.grey,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Continue'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).pop(); // Return to previous screen
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: app_colors.secondary,
-            ),
-            child: const Text('Finish Inspection'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: app_colors.primary,
-      body: Stack(
-        children: [
-          // Enhanced background gradient
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  app_colors.primary,
-                  app_colors.primary.withOpacity(0.9),
-                  app_colors.darkPrimary,
-                ],
-              ),
-            ),
-          ),
-
-          // Background logo
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Align(
-                alignment: Alignment.center,
-                child: Opacity(
-                  opacity: 0.03,
-                  child: Image.asset(
-                    'assets/images/logo.png',
-                    width: 500,
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          SafeArea(
-            child: Column(
-              children: [
-                _buildHeader(),
-                Expanded(
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      children: [
-                        _buildVoiceInterface(),
-                        const SizedBox(height: 32),
-                        _buildInspectionChecklist(),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              GestureDetector(
-                onTap: () {
-                  _stopListening(); // Stop listening before navigating away
-                  Navigator.of(context).pop();
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.2),
-                      width: 1,
-                    ),
-                  ),
-                  child: Icon(
-                    Icons.arrow_back,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    widget.aircraftModel,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    'RP: ${widget.rpNumber}',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.8),
-                      fontSize: 14,
-                    ),
-                  ),
-                  if (_userType != null) ...[
-                    Text(
-                      '${_userType} Inspection',
-                      style: TextStyle(
-                        color: app_colors.secondary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'Voice-Controlled Inspection',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _userType != null
-                ? 'Hands-free ${_userType!.toLowerCase()} inspection in progress'
-                : 'Hands-free inspection in progress',
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.8),
-              fontSize: 16,
-            ),
-          ),
-          // Add dropdown for mechanics to select inspection type
-          if (_userType == 'Mechanic') ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.2),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'Inspection Type:',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  DropdownButton<String>(
-                    value: _inspectionType,
-                    items: _inspectionTypes.map((String type) {
-                      return DropdownMenuItem<String>(
-                        value: type,
-                        child: Text(
-                          type,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (String? newValue) {
-                      if (newValue != null) {
-                        _debouncedSetState(() {
-                          _inspectionType = newValue;
-                          _currentTaskIndex =
-                              0; // Reset to first task when changing inspection type
-                          _taskCompleted = false; // Reset task completion flag
-                        });
-                        // Cancel any existing timers
-                        _responseTimeoutTimer?.cancel();
-                        // Restart the inspection with the new type
-                        Future.delayed(const Duration(milliseconds: 300), () {
-                          _readCurrentTask();
-                        });
-                      }
-                    },
-                    dropdownColor: app_colors.primary,
-                    icon: Icon(
-                      Icons.arrow_drop_down,
-                      color: Colors.white.withOpacity(0.8),
-                    ),
-                    underline: Container(),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVoiceInterface() {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: Colors.white.withOpacity(0.2),
-                width: 1,
-              ),
-            ),
-            child: Column(
-              children: [
-                // Voice indicator (no button needed for hands-free)
-                AnimatedBuilder(
-                  animation:
-                      Listenable.merge([_pulseAnimation, _waveAnimation]),
-                  builder: (context, child) {
-                    return Container(
-                      width: 120,
-                      height: 120,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _isListening
-                            ? app_colors.secondary.withOpacity(0.8)
-                            : app_colors.secondary,
-                        boxShadow: _isListening
-                            ? [
-                                BoxShadow(
-                                  color: app_colors.secondary.withOpacity(0.4),
-                                  blurRadius: 20 * _pulseAnimation.value,
-                                  spreadRadius: 5 * _pulseAnimation.value,
-                                ),
-                              ]
-                            : [
-                                BoxShadow(
-                                  color: app_colors.secondary.withOpacity(0.3),
-                                  blurRadius: 15,
-                                  offset: const Offset(0, 5),
-                                ),
-                              ],
-                      ),
-                      child: Transform.scale(
-                        scale: _isListening ? _pulseAnimation.value : 1.0,
-                        child: Icon(
-                          _isListening
-                              ? Icons.mic
-                              : _isProcessing
-                                  ? Icons.hourglass_empty
-                                  : Icons.mic_none,
-                          size: 48,
-                          color: Colors.white,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-
-                const SizedBox(height: 24),
-
-                // Status text
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.2),
-                      width: 1,
-                    ),
-                  ),
-                  child: Text(
-                    _lastRecognizedText,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                Text(
-                  _isListening
-                      ? 'Listening... Speak commands naturally. Say "done" or "problem"'
-                      : 'Initializing hands-free inspection',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.7),
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInspectionChecklist() {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Colors.white.withOpacity(0.15),
-                width: 1,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 4,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        color: app_colors.secondary,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      'Inspection Checklist',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const Spacer(),
-                    _buildProgressIndicator(),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                ...(_currentInspectionItems
-                    .map((item) => _buildChecklistItem(item))
-                    .toList()),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProgressIndicator() {
-    final completed =
-        _currentInspectionItems.where((item) => item.isCompleted).length;
-    final total = _currentInspectionItems.length;
-    final progress = total > 0 ? completed / total : 0.0;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.2),
-          width: 1,
-        ),
-      ),
-      child: Text(
-        '$completed/$total',
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildChecklistItem(InspectionItem item) {
-    // Determine the background color based on state
-    Color backgroundColor;
-    Color borderColor;
-    IconData iconData;
-    Color iconColor;
-
-    if (item.isCompleted) {
-      backgroundColor = Colors.green.withOpacity(0.1);
-      borderColor = Colors.green.withOpacity(0.3);
-      iconData = Icons.check;
-      iconColor = Colors.green;
-    } else if (item.hasWarning) {
-      backgroundColor = Colors.orange.withOpacity(0.1);
-      borderColor = Colors.orange.withOpacity(0.3);
-      iconData = Icons.warning;
-      iconColor = Colors.orange;
-    } else {
-      backgroundColor = Colors.white.withOpacity(0.05);
-      borderColor = Colors.white.withOpacity(0.1);
-      iconData = Icons.circle_outlined;
-      iconColor = Colors.white.withOpacity(0.7);
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: borderColor,
-          width: 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: item.isCompleted || item.hasWarning
-                  ? iconColor
-                  : Colors.white.withOpacity(0.2),
-              border: Border.all(
-                color: item.isCompleted || item.hasWarning
-                    ? iconColor
-                    : Colors.white.withOpacity(0.3),
-                width: 2,
-              ),
-            ),
-            child: Icon(
-              iconData,
-              color: item.isCompleted || item.hasWarning
-                  ? Colors.white
-                  : Colors.white.withOpacity(0.7),
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.title,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    decoration:
-                        item.isCompleted ? TextDecoration.lineThrough : null,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  item.description,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.7),
-                    fontSize: 14,
-                  ),
-                ),
-                if (item.isCompleted && item.completedAt != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Completed at ${item.completedAt!.hour.toString().padLeft(2, '0')}:${item.completedAt!.minute.toString().padLeft(2, '0')}',
-                    style: TextStyle(
-                      color: Colors.green.withOpacity(0.8),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-                if (item.hasWarning && item.warningAt != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Warning at ${item.warningAt!.hour.toString().padLeft(2, '0')}:${item.warningAt!.minute.toString().padLeft(2, '0')}',
-                    style: TextStyle(
-                      color: Colors.orange.withOpacity(0.8),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class InspectionItem {
-  final String id;
-  final String title;
-  final String description;
-  final List<String> commands;
-  bool isCompleted;
-  DateTime? completedAt;
-  bool hasWarning; // New field for warning state
-  DateTime? warningAt; // New field for warning timestamp
-
-  InspectionItem({
-    required this.id,
-    required this.title,
-    required this.description,
-    required this.commands,
-    this.isCompleted = false,
-    this.completedAt,
-    this.hasWarning = false, // Initialize warning state
-    this.warningAt,
-  });
-}
+// import 'dart:ui';
+// import 'dart:async'; // Add this import for Timer
+// import 'package:flutter/material.dart';
+// import 'package:flutter/services.dart';
+// import 'package:skycypher/utils/colors.dart' as app_colors;
+// import 'package:speech_to_text/speech_to_text.dart' as stt;
+// import 'package:skycypher/services/auth_service.dart';
+// import 'package:flutter_tts/flutter_tts.dart';
+
+// class VoiceInspectionScreen extends StatefulWidget {
+//   final String aircraftModel;
+//   final String rpNumber;
+
+//   const VoiceInspectionScreen({
+//     super.key,
+//     required this.aircraftModel,
+//     required this.rpNumber,
+//   });
+
+//   @override
+//   State<VoiceInspectionScreen> createState() => _VoiceInspectionScreenState();
+// }
+
+// class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
+//     with TickerProviderStateMixin {
+//   late AnimationController _pulseController;
+//   late AnimationController _waveController;
+//   late Animation<double> _pulseAnimation;
+//   late Animation<double> _waveAnimation;
+
+//   // Speech to text implementation
+//   late stt.SpeechToText _speech;
+//   bool _isListening = false;
+//   bool _isProcessing = false;
+//   String _currentCommand = '';
+//   String _lastRecognizedText = 'Initializing...';
+//   String? _userType;
+
+//   // Inspection type for mechanics
+//   String _inspectionType = 'Pre-Flight'; // Default to Pre-Flight
+//   final List<String> _inspectionTypes = ['Pre-Flight', 'Maintenance'];
+
+//   // Text to speech implementation
+//   late FlutterTts _flutterTts;
+//   bool _isSpeaking = false;
+
+//   // Inspection checklists for different user types
+//   List<InspectionItem> _pilotInspectionItems = [];
+//   List<InspectionItem> _mechanicInspectionItems = [];
+//   List<InspectionItem> _mechanicMaintenanceItems =
+//       []; // New list for maintenance items
+
+//   // Current task tracking
+//   int _currentTaskIndex = 0;
+//   bool _taskCompleted = false; // Track if current task is explicitly completed
+
+//   // Timer for continuous listening check
+//   Timer? _listeningCheckTimer;
+//   Timer? _responseTimeoutTimer; // New timer for response timeout handling
+
+//   // Response timeout duration (increased from default)
+//   final Duration _responseTimeout = const Duration(seconds: 60); // 60 seconds
+
+//   // Debounce timer for UI updates to prevent flickering
+//   Timer? _uiUpdateDebounceTimer;
+
+//   // Get the current inspection items based on user type and inspection type
+//   List<InspectionItem> get _currentInspectionItems {
+//     if (_userType == 'Mechanic') {
+//       // Return maintenance items if mechanic selected maintenance, otherwise regular mechanic items
+//       return _inspectionType == 'Maintenance'
+//           ? _mechanicMaintenanceItems
+//           : _mechanicInspectionItems;
+//     } else {
+//       // Default to pilot items for Pilot user type or if user type is not set
+//       return _pilotInspectionItems;
+//     }
+//   }
+
+//   @override
+//   void initState() {
+//     super.initState();
+
+//     // Fetch user data to determine user type
+//     _fetchUserData();
+
+//     // Initialize speech to text
+//     _speech = stt.SpeechToText();
+//     _initializeSpeechRecognition();
+
+//     // Initialize text to speech
+//     _flutterTts = FlutterTts();
+//     _initializeTextToSpeech().then((_) {
+//       print('TTS initialization completed');
+//     });
+
+//     _pulseController = AnimationController(
+//       duration: const Duration(milliseconds: 1500),
+//       vsync: this,
+//     );
+
+//     _waveController = AnimationController(
+//       duration: const Duration(milliseconds: 2000),
+//       vsync: this,
+//     );
+
+//     _pulseAnimation = Tween<double>(
+//       begin: 0.8,
+//       end: 1.2,
+//     ).animate(CurvedAnimation(
+//       parent: _pulseController,
+//       curve: Curves.easeInOut,
+//     ));
+
+//     _waveAnimation = Tween<double>(
+//       begin: 0.0,
+//       end: 1.0,
+//     ).animate(CurvedAnimation(
+//       parent: _waveController,
+//       curve: Curves.easeInOut,
+//     ));
+
+//     // Start periodic check for continuous listening
+//     _startListeningCheck();
+//   }
+
+//   // Start or reset the response timeout timer
+//   void _startResponseTimeout() {
+//     _responseTimeoutTimer?.cancel();
+//     _responseTimeoutTimer = Timer(_responseTimeout, () {
+//       if (mounted) {
+//         // When timeout occurs, inform user but don't skip task
+//         _debouncedSetState(() {
+//           _lastRecognizedText =
+//               'Still waiting for your response. Take your time.';
+//         });
+
+//         // Restart listening if not already listening
+//         if (!_isListening) {
+//           _startListening();
+//         }
+
+//         // Restart the timeout timer to give more time
+//         _startResponseTimeout();
+//       }
+//     });
+//   }
+
+//   // Debounced setState to prevent UI flickering
+//   void _debouncedSetState(VoidCallback callback) {
+//     _uiUpdateDebounceTimer?.cancel();
+//     _uiUpdateDebounceTimer = Timer(const Duration(milliseconds: 100), () {
+//       if (mounted) {
+//         setState(() {
+//           callback();
+//         });
+//       }
+//     });
+//   }
+
+//   void _startListeningCheck() {
+//     _listeningCheckTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+//       if (mounted && !_isSpeaking && !_isListening) {
+//         print('Periodic check: Not listening, attempting to restart');
+//         _startListening();
+//       }
+//     });
+//   }
+
+//   Future<void> _fetchUserData() async {
+//     try {
+//       final userData = await AuthService.getUserData();
+//       if (userData != null && userData['userType'] != null) {
+//         setState(() {
+//           _userType = userData['userType'] as String;
+//         });
+//       }
+//       // Initialize inspection items after user type is determined
+//       _initializeInspectionItems();
+//     } catch (e) {
+//       print('Error fetching user data: $e');
+//       // Initialize with default items if user data fetch fails
+//       _initializeInspectionItems();
+//     }
+//   }
+
+//   void _initializeInspectionItems() {
+//     // Mechanic inspection items (number 1 & 2 in your PDF)
+//     _pilotInspectionItems = [
+//       InspectionItem(
+//         id: 'fuel_tank_quality',
+//         title: 'Fuel Tank Quality',
+//         description:
+//             'Check fuel tank for contamination, proper fuel level and quality',
+//         commands: ['fuel tank quality', 'check fuel tank', 'inspect fuel tank'],
+//       ),
+//       InspectionItem(
+//         id: 'sump_drain',
+//         title: 'Sump Drain',
+//         description:
+//             'Drain sump and check for water, sediment or other contaminants',
+//         commands: ['sump drain', 'check sump', 'inspect sump drain'],
+//       ),
+//       InspectionItem(
+//         id: 'leading_edge',
+//         title: 'Leading Edge',
+//         description: 'Inspect leading edge for damage, dents or wear',
+//         commands: [
+//           'leading edge',
+//           'check leading edge',
+//           'inspect leading edge'
+//         ],
+//       ),
+//       InspectionItem(
+//         id: 'aileron',
+//         title: 'Aileron',
+//         description:
+//             'Check aileron hinges, control surfaces and attachment points',
+//         commands: ['aileron', 'check aileron', 'inspect aileron'],
+//       ),
+//       InspectionItem(
+//         id: 'flap',
+//         title: 'Flap',
+//         description:
+//             'Inspect flaps for damage, proper operation and attachment',
+//         commands: ['flap', 'check flap', 'inspect flap'],
+//       ),
+//       InspectionItem(
+//         id: 'tire',
+//         title: 'Tire',
+//         description: 'Check tire condition, pressure and tread wear',
+//         commands: ['tire', 'check tire', 'inspect tire'],
+//       ),
+//       InspectionItem(
+//         id: 'brake',
+//         title: 'Brake',
+//         description: 'Inspect brake pads, discs and hydraulic connections',
+//         commands: ['brake', 'check brake', 'inspect brake'],
+//       ),
+//       InspectionItem(
+//         id: 'fuselage_tail',
+//         title: 'Fuselage / Tail Inspection',
+//         description:
+//             'Fuselage surface, stabilizer, elevator, rudder, tail tie-down',
+//         commands: [
+//           'fuselage inspection',
+//           'check fuselage',
+//           'inspect fuselage and tail'
+//         ],
+//       ),
+//       InspectionItem(
+//         id: 'nose_section',
+//         title: 'Nose Section Inspection',
+//         description:
+//             'Windshield, oil level, belly sump, propeller, spinner, static port',
+//         commands: ['nose inspection', 'check nose section', 'inspect nose'],
+//       ),
+//       InspectionItem(
+//         id: 'right_wing',
+//         title: 'Right Wing / Fuselage Inspection',
+//         description: 'Repeat inspections from left side',
+//         commands: [
+//           'right wing inspection',
+//           'check right wing',
+//           'inspect right wing'
+//         ],
+//       ),
+//       InspectionItem(
+//         id: 'final_walkaround',
+//         title: 'Final Walk-Around Pass',
+//         description: 'Panels, caps, chocks, covers secured',
+//         commands: [
+//           'final walkaround',
+//           'final inspection',
+//           'complete walkaround'
+//         ],
+//       ),
+//       InspectionItem(
+//         id: 'cockpit_before_start',
+//         title: 'Cockpit / Before Start',
+//         description:
+//             'Seats, doors, avionics, master switch, flaps, control lock',
+//         commands: ['cockpit check', 'check cockpit', 'cockpit inspection'],
+//       ),
+//     ];
+
+//     _mechanicInspectionItems = [
+//       // Pre Flight Category
+//       InspectionItem(
+//         id: 'fuel_tank_quality',
+//         title: 'Fuel Tank Quality',
+//         description:
+//             'Check fuel tank for contamination, proper fuel level and quality',
+//         commands: ['fuel tank quality', 'check fuel tank', 'inspect fuel tank'],
+//       ),
+//       InspectionItem(
+//         id: 'sump_drain',
+//         title: 'Sump Drain',
+//         description:
+//             'Drain sump and check for water, sediment or other contaminants',
+//         commands: ['sump drain', 'check sump', 'inspect sump drain'],
+//       ),
+//       InspectionItem(
+//         id: 'leading_edge',
+//         title: 'Leading Edge',
+//         description: 'Inspect leading edge for damage, dents or wear',
+//         commands: [
+//           'leading edge',
+//           'check leading edge',
+//           'inspect leading edge'
+//         ],
+//       ),
+//       InspectionItem(
+//         id: 'aileron',
+//         title: 'Aileron',
+//         description:
+//             'Check aileron hinges, control surfaces and attachment points',
+//         commands: ['aileron', 'check aileron', 'inspect aileron'],
+//       ),
+//       InspectionItem(
+//         id: 'flap',
+//         title: 'Flap',
+//         description:
+//             'Inspect flaps for damage, proper operation and attachment',
+//         commands: ['flap', 'check flap', 'inspect flap'],
+//       ),
+//       InspectionItem(
+//         id: 'tire',
+//         title: 'Tire',
+//         description: 'Check tire condition, pressure and tread wear',
+//         commands: ['tire', 'check tire', 'inspect tire'],
+//       ),
+//       InspectionItem(
+//         id: 'brake',
+//         title: 'Brake',
+//         description: 'Inspect brake pads, discs and hydraulic connections',
+//         commands: ['brake', 'check brake', 'inspect brake'],
+//       ),
+//       InspectionItem(
+//         id: 'fuselage_tail',
+//         title: 'Fuselage / Tail Inspection',
+//         description:
+//             'Fuselage surface, stabilizer, elevator, rudder, tail tie-down',
+//         commands: [
+//           'fuselage inspection',
+//           'check fuselage',
+//           'inspect fuselage and tail'
+//         ],
+//       ),
+//       InspectionItem(
+//         id: 'nose_section',
+//         title: 'Nose Section Inspection',
+//         description:
+//             'Windshield, oil level, belly sump, propeller, spinner, static port',
+//         commands: ['nose inspection', 'check nose section', 'inspect nose'],
+//       ),
+//       InspectionItem(
+//         id: 'right_wing',
+//         title: 'Right Wing / Fuselage Inspection',
+//         description: 'Repeat inspections from left side',
+//         commands: [
+//           'right wing inspection',
+//           'check right wing',
+//           'inspect right wing'
+//         ],
+//       ),
+//       InspectionItem(
+//         id: 'final_walkaround',
+//         title: 'Final Walk-Around Pass',
+//         description: 'Panels, caps, chocks, covers secured',
+//         commands: [
+//           'final walkaround',
+//           'final inspection',
+//           'complete walkaround'
+//         ],
+//       ),
+//       InspectionItem(
+//         id: 'cockpit_before_start',
+//         title: 'Cockpit / Before Start',
+//         description:
+//             'Seats, doors, avionics, master switch, flaps, control lock',
+//         commands: ['cockpit check', 'check cockpit', 'cockpit inspection'],
+//       ),
+//     ];
+
+//     // Maintenance items for mechanics (more comprehensive)
+//     _mechanicMaintenanceItems = [
+//       InspectionItem(
+//         id: 'airframe_structural',
+//         title: 'Airframe / Structural Inspection',
+//         description: 'Fuselage, wings, tail surfaces, rivets, skin integrity',
+//         commands: ['airframe inspection', 'check airframe', 'inspect airframe'],
+//       ),
+//       InspectionItem(
+//         id: 'cabin_cockpit',
+//         title: 'Cabin / Cockpit Inspection',
+//         description: 'Seats, safety belts, windows, flight controls',
+//         commands: ['cabin inspection', 'check cabin', 'inspect cabin'],
+//       ),
+//       InspectionItem(
+//         id: 'engine_nacelle',
+//         title: 'Engine / Nacelle Inspection',
+//         description: 'Leaks, mounting, cables, hoses, exhaust, cleanliness',
+//         commands: ['engine inspection', 'check engine', 'inspect engine'],
+//       ),
+//       InspectionItem(
+//         id: 'landing_gear',
+//         title: 'Landing Gear / Wheels Inspection',
+//         description: 'Gear assemblies, tires, brakes, shock strut',
+//         commands: [
+//           'landing gear inspection',
+//           'check landing gear',
+//           'inspect landing gear'
+//         ],
+//       ),
+//       InspectionItem(
+//         id: 'propeller_spinner',
+//         title: 'Propeller / Spinner Inspection',
+//         description: 'Blades, cracks, nicks, spinner, mounting bolts',
+//         commands: [
+//           'propeller inspection',
+//           'check propeller',
+//           'inspect propeller'
+//         ],
+//       ),
+//       InspectionItem(
+//         id: 'electrical_avionics',
+//         title: 'Electrical / Avionics Inspection',
+//         description: 'Wiring, conduits, antennas, secure installation',
+//         commands: [
+//           'electrical inspection',
+//           'check electrical',
+//           'inspect electrical'
+//         ],
+//       ),
+//       InspectionItem(
+//         id: 'fuel_system',
+//         title: 'Fuel System Inspection',
+//         description: 'Tanks, lines, filters, pumps, vents, drains',
+//         commands: [
+//           'fuel system inspection',
+//           'check fuel system',
+//           'inspect fuel system'
+//         ],
+//       ),
+//       InspectionItem(
+//         id: 'hydraulic_system',
+//         title: 'Hydraulic System Inspection',
+//         description: 'Reservoirs, lines, pumps, actuators, leaks',
+//         commands: [
+//           'hydraulic system inspection',
+//           'check hydraulic system',
+//           'inspect hydraulic system'
+//         ],
+//       ),
+//       InspectionItem(
+//         id: 'instrument_panel',
+//         title: 'Instrument Panel Inspection',
+//         description: 'Gauges, indicators, warning systems, calibration',
+//         commands: [
+//           'instrument panel inspection',
+//           'check instrument panel',
+//           'inspect instrument panel'
+//         ],
+//       ),
+//       InspectionItem(
+//         id: 'navigation_lights',
+//         title: 'Navigation Lights Inspection',
+//         description: 'Position lights, strobes, landing lights, wiring',
+//         commands: [
+//           'navigation lights inspection',
+//           'check navigation lights',
+//           'inspect navigation lights'
+//         ],
+//       ),
+//       InspectionItem(
+//         id: 'communication_system',
+//         title: 'Communication System Inspection',
+//         description: 'Radios, intercom, antennas, audio panels',
+//         commands: [
+//           'communication system inspection',
+//           'check communication system',
+//           'inspect communication system'
+//         ],
+//       ),
+//       InspectionItem(
+//         id: 'pitot_static_system',
+//         title: 'Pitot Static System Inspection',
+//         description: 'Pitot tubes, static ports, heating, lines',
+//         commands: [
+//           'pitot static system inspection',
+//           'check pitot static system',
+//           'inspect pitot static system'
+//         ],
+//       ),
+//     ];
+
+//     // Start reading the first task after a short delay to ensure everything is initialized
+//     WidgetsBinding.instance.addPostFrameCallback((_) {
+//       Future.delayed(const Duration(milliseconds: 500), () {
+//         if (mounted && _currentInspectionItems.isNotEmpty) {
+//           _readCurrentTask();
+//         }
+//       });
+//     });
+//   }
+
+//   Future<void> _initializeSpeechRecognition() async {
+//     _debouncedSetState(() {
+//       _lastRecognizedText = 'Initializing speech recognition...';
+//     });
+
+//     try {
+//       bool available = await _speech.initialize(
+//         onError: (error) => _onSpeechError(error),
+//         onStatus: (status) => _onSpeechStatus(status),
+//         finalTimeout: const Duration(
+//             seconds: 60), // Increased final timeout to 60 seconds
+//       );
+
+//       if (available) {
+//         _debouncedSetState(() {
+//           _lastRecognizedText = _userType != null
+//               ? 'Ready to listen. Say commands for ${_userType!.toLowerCase()} inspection'
+//               : 'Ready to listen. Say inspection commands';
+//         });
+
+//         // Start listening automatically after initialization
+//         _startListening();
+//       } else {
+//         _debouncedSetState(() {
+//           _lastRecognizedText = 'Speech recognition not available';
+//         });
+//       }
+//     } catch (e) {
+//       _debouncedSetState(() {
+//         _lastRecognizedText = 'Error initializing speech recognition: $e';
+//       });
+//     }
+//   }
+
+//   Future<void> _initializeTextToSpeech() async {
+//     try {
+//       await _flutterTts.setLanguage("en-US");
+//       await _flutterTts.setSpeechRate(0.45); // Slightly slower for clarity
+//       await _flutterTts.setVolume(1.0);
+//       await _flutterTts
+//           .setPitch(1.1); // Slightly higher pitch for clearer voice
+
+//       print('TTS initialized successfully');
+
+//       _flutterTts.setStartHandler(() {
+//         print('TTS started speaking');
+//         _debouncedSetState(() {
+//           _isSpeaking = true;
+//         });
+//       });
+
+//       _flutterTts.setCompletionHandler(() {
+//         print('TTS finished speaking');
+//         _debouncedSetState(() {
+//           _isSpeaking = false;
+//         });
+
+//         // After speaking a task, ensure we're listening for user response
+//         Future.delayed(const Duration(milliseconds: 300), () {
+//           if (mounted) {
+//             // Ensure continuous listening - restart if needed
+//             if (!_isListening) {
+//               _startListening();
+//             }
+//             // Start the response timeout timer after TTS completes
+//             _startResponseTimeout();
+//           }
+//         });
+//       });
+
+//       _flutterTts.setCancelHandler(() {
+//         print('TTS cancelled');
+//         _debouncedSetState(() {
+//           _isSpeaking = false;
+//         });
+
+//         // Ensure we're still listening after cancellation
+//         Future.delayed(const Duration(milliseconds: 300), () {
+//           if (mounted) {
+//             // Ensure continuous listening - restart if needed
+//             if (!_isListening) {
+//               _startListening();
+//             }
+//             // Start the response timeout timer after TTS cancels
+//             _startResponseTimeout();
+//           }
+//         });
+//       });
+
+//       _flutterTts.setErrorHandler((msg) {
+//         print('TTS Error: $msg');
+//         _debouncedSetState(() {
+//           _isSpeaking = false;
+//           _lastRecognizedText = 'TTS Error: $msg';
+//         });
+//         // Retry the same task instead of skipping to the next one
+//         Future.delayed(const Duration(milliseconds: 1000), () {
+//           if (mounted) {
+//             _readCurrentTask(); // Retry the same task
+//           }
+//         });
+//       });
+
+//       // Test TTS with a simple phrase to ensure it's working
+//       await Future.delayed(const Duration(milliseconds: 1000));
+//       print('Testing TTS with sample phrase');
+//       // await _flutterTts.speak("Text to speech is ready");
+//     } catch (e) {
+//       print('Error initializing TTS: $e');
+//       _debouncedSetState(() {
+//         _lastRecognizedText = 'Error initializing TTS: $e';
+//       });
+//     }
+//   }
+
+//   void _onSpeechError(dynamic error) {
+//     print('Speech recognition error: $error');
+//     _debouncedSetState(() {
+//       _lastRecognizedText = 'Speech recognition error: $error';
+//       _isListening = false;
+//       _isProcessing = false;
+//     });
+//     _pulseController.stop();
+//     _waveController.stop();
+
+//     // Automatically restart listening after an error
+//     Future.delayed(const Duration(seconds: 2), () {
+//       if (mounted) {
+//         _startListening();
+//       }
+//     });
+//   }
+
+//   void _onSpeechStatus(String status) {
+//     print('Speech recognition status: $status');
+//     // Handle speech recognition status changes if needed
+//     // Restart listening if it stops unexpectedly
+//     if (status == 'notListening' && mounted) {
+//       Future.delayed(const Duration(milliseconds: 500), () {
+//         if (mounted && !_isSpeaking) {
+//           _startListening();
+//         }
+//       });
+//     }
+//   }
+
+//   @override
+//   void dispose() {
+//     _stopListening(); // Stop listening when screen is disposed
+//     _pulseController.dispose();
+//     _waveController.dispose();
+//     _flutterTts.stop();
+//     _listeningCheckTimer?.cancel(); // Cancel the periodic check timer
+//     _responseTimeoutTimer?.cancel(); // Cancel the response timeout timer
+//     _uiUpdateDebounceTimer?.cancel(); // Cancel the UI update debounce timer
+//     super.dispose();
+//   }
+
+//   void _startListening() async {
+//     if (_isListening) return;
+
+//     _debouncedSetState(() {
+//       _isListening = true;
+//       _currentCommand = '';
+//       _lastRecognizedText = 'Listening...';
+//     });
+
+//     HapticFeedback.heavyImpact();
+//     _pulseController.repeat(reverse: true);
+//     _waveController.repeat();
+
+//     try {
+//       // Start listening for speech with continuous listening parameters
+//       _speech.listen(
+//         onResult: (result) {
+//           _debouncedSetState(() {
+//             _currentCommand = result.recognizedWords;
+//             _lastRecognizedText = 'Recognized: "$_currentCommand"';
+//           });
+
+//           // Process the command immediately
+//           _processCommand(_currentCommand);
+//         },
+//         listenFor: const Duration(seconds: 60), // Increased to 60 seconds
+//         pauseFor:
+//             const Duration(seconds: 10), // Increased pause time to 10 seconds
+//         localeId: 'en_US',
+//       );
+//     } catch (e) {
+//       print('Error starting speech recognition: $e');
+//       _debouncedSetState(() {
+//         _isListening = false;
+//         _lastRecognizedText = 'Error starting speech recognition: $e';
+//       });
+//       _pulseController.stop();
+//       _waveController.stop();
+
+//       // Retry listening after a short delay
+//       Future.delayed(const Duration(seconds: 2), () {
+//         if (mounted) {
+//           _startListening();
+//         }
+//       });
+//     }
+//   }
+
+//   void _stopListening() {
+//     if (!_isListening) return;
+
+//     _debouncedSetState(() {
+//       _isListening = false;
+//       _isProcessing = true;
+//     });
+
+//     try {
+//       _speech.stop();
+//     } catch (e) {
+//       print('Error stopping speech recognition: $e');
+//     }
+
+//     _pulseController.stop();
+//     _waveController.stop();
+
+//     // Process any final command only if it's not empty
+//     if (_currentCommand.isNotEmpty && _currentCommand.trim().isNotEmpty) {
+//       _processCommand(_currentCommand);
+//     }
+
+//     _debouncedSetState(() {
+//       _isProcessing = false;
+//     });
+//   }
+
+//   void _processCommand(String command) {
+//     final lowerCommand = command.toLowerCase().trim();
+
+//     print(
+//         'Processing command: $command, current task index: $_currentTaskIndex');
+
+//     // Handle specific commands for task completion
+//     if (_currentTaskIndex < _currentInspectionItems.length) {
+//       final currentItem = _currentInspectionItems[_currentTaskIndex];
+
+//       // Check for completion commands - only move to next task with explicit confirmation
+//       if ((lowerCommand == 'done' ||
+//               lowerCommand == 'completed' ||
+//               lowerCommand == 'check' ||
+//               lowerCommand.contains('done') ||
+//               lowerCommand.contains('completed') ||
+//               lowerCommand.contains('okay') ||
+//               lowerCommand.contains('ok')) &&
+//           !_taskCompleted) {
+//         // Prevent duplicate processing
+//         _debouncedSetState(() {
+//           currentItem.isCompleted = true;
+//           currentItem.completedAt = DateTime.now();
+//           currentItem.hasWarning = false; // Clear any warning
+//           _taskCompleted = true; // Mark task as explicitly completed
+//         });
+//         HapticFeedback.lightImpact();
+//         _lastRecognizedText = 'Task completed: ${currentItem.title}';
+
+//         print('Task completed: ${currentItem.title}, moving to next task');
+
+//         // Move to next task after a delay to allow user to hear confirmation
+//         Future.delayed(const Duration(seconds: 2), () {
+//           if (mounted) {
+//             _nextTask();
+//           }
+//         });
+//         return;
+//       }
+
+//       // Check for warning commands
+//       if ((lowerCommand == 'not completed' ||
+//               lowerCommand == 'problem' ||
+//               lowerCommand.contains('not completed') ||
+//               lowerCommand.contains('problem')) &&
+//           !_taskCompleted) {
+//         // Prevent duplicate processing
+//         _debouncedSetState(() {
+//           currentItem.isCompleted = false;
+//           currentItem.hasWarning = true;
+//           currentItem.warningAt = DateTime.now();
+//           _taskCompleted = true; // Mark task as explicitly completed
+//         });
+//         HapticFeedback.mediumImpact();
+//         _lastRecognizedText = 'Task has issue: ${currentItem.title}';
+
+//         print('Task has warning: ${currentItem.title}, moving to next task');
+
+//         // Move to next task after a delay to allow user to hear confirmation
+//         Future.delayed(const Duration(seconds: 2), () {
+//           if (mounted) {
+//             _nextTask();
+//           }
+//         });
+//         return;
+//       }
+//     }
+
+//     // Handle general completion command
+//     if (lowerCommand.contains('complete') ||
+//         lowerCommand.contains('finish') ||
+//         lowerCommand.contains('inspection complete')) {
+//       if (mounted) {
+//         _showCompletionDialog();
+//       }
+//       return;
+//     }
+
+//     // If we get here, the command wasn't recognized, but we should keep listening
+//     // Don't stop listening - just inform the user and continue
+//     _lastRecognizedText =
+//         'Command not recognized. Please say "done" when finished or "problem" if there is an issue.';
+//     print('Command not recognized: $command');
+
+//     // Ensure we're still listening
+//     if (!_isListening && mounted) {
+//       Future.delayed(const Duration(milliseconds: 500), () {
+//         if (mounted && !_isListening) {
+//           _startListening();
+//         }
+//       });
+//     }
+//   }
+
+//   // Method to move to the next task
+//   void _nextTask() {
+//     // Reset task completion flag for next task
+//     _taskCompleted = false;
+
+//     // Cancel any existing response timeout timer
+//     _responseTimeoutTimer?.cancel();
+
+//     // Move to next task
+//     _currentTaskIndex++;
+
+//     // Reset command for next task
+//     _currentCommand = '';
+
+//     WidgetsBinding.instance.addPostFrameCallback((_) {
+//       if (mounted) {
+//         _readCurrentTask();
+//       }
+//     });
+//   }
+
+//   Future<void> _readCurrentTask() async {
+//     print('Reading task at index: $_currentTaskIndex');
+//     if (_currentTaskIndex < _currentInspectionItems.length) {
+//       final currentItem = _currentInspectionItems[_currentTaskIndex];
+//       // Make the AI more conversational
+//       final textToSpeak = _currentTaskIndex == 0
+//           ? 'Starting $_inspectionType Checklist for ${widget.aircraftModel}. Please check the ${currentItem.title.toLowerCase()}. Say "done" when completed or "problem" if there is an issue.'
+//           : 'Please check the ${currentItem.title.toLowerCase()}. Say "done" when completed or "problem" if there is an issue.';
+
+//       print('Reading task: $textToSpeak'); // Debug log
+
+//       _debouncedSetState(() {
+//         _lastRecognizedText = 'Reading task: $textToSpeak';
+//       });
+
+//       // Don't stop listening while speaking - keep listening continuously
+//       // _stopListening(); // Removed this line - we keep listening
+
+//       try {
+//         // Add a small delay to ensure TTS is ready
+//         await Future.delayed(const Duration(milliseconds: 100));
+
+//         // Speak the task
+//         await _flutterTts.speak(textToSpeak);
+//       } catch (e) {
+//         print('Error speaking task: $e');
+//         _debouncedSetState(() {
+//           _lastRecognizedText = 'Error reading task: $e';
+//         });
+//         // Retry the same task instead of skipping to the next one
+//         Future.delayed(const Duration(milliseconds: 1000), () {
+//           if (mounted) {
+//             _readCurrentTask(); // Retry the same task
+//           }
+//         });
+//         return;
+//       }
+
+//       // Ensure we're still listening after speaking
+//       Future.delayed(const Duration(milliseconds: 500), () {
+//         if (mounted && !_isListening) {
+//           _startListening();
+//         }
+//       });
+//     } else {
+//       // All tasks completed, show summary
+//       print('All tasks completed, showing summary');
+//       if (mounted) {
+//         _showCompletionDialog();
+//       }
+//     }
+//   }
+
+//   void _showCompletionDialog() {
+//     final completedItems =
+//         _currentInspectionItems.where((item) => item.isCompleted).length;
+//     final warningItems =
+//         _currentInspectionItems.where((item) => item.hasWarning).length;
+//     final totalItems = _currentInspectionItems.length;
+//     final pendingItems = totalItems - completedItems - warningItems;
+
+//     showDialog(
+//       context: context,
+//       builder: (context) => AlertDialog(
+//         backgroundColor: app_colors.primary,
+//         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+//         title: const Text(
+//           'Inspection Summary',
+//           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+//         ),
+//         content: Column(
+//           mainAxisSize: MainAxisSize.min,
+//           children: [
+//             Text(
+//               'Aircraft: ${widget.aircraftModel}',
+//               style: TextStyle(color: Colors.white.withOpacity(0.9)),
+//             ),
+//             Text(
+//               'RP Number: ${widget.rpNumber}',
+//               style: TextStyle(color: Colors.white.withOpacity(0.9)),
+//             ),
+//             Text(
+//               'User Type: ${_userType ?? "Unknown"}',
+//               style: TextStyle(color: Colors.white.withOpacity(0.9)),
+//             ),
+//             if (_userType == 'Mechanic') ...[
+//               const SizedBox(height: 8),
+//               Text(
+//                 'Inspection Type: $_inspectionType',
+//                 style: TextStyle(color: Colors.white.withOpacity(0.9)),
+//               ),
+//             ],
+//             const SizedBox(height: 16),
+//             Text(
+//               'Completed: $completedItems/$totalItems items',
+//               style: const TextStyle(
+//                 color: Colors.white,
+//                 fontSize: 18,
+//                 fontWeight: FontWeight.bold,
+//               ),
+//             ),
+//             if (warningItems > 0) ...[
+//               const SizedBox(height: 8),
+//               Text(
+//                 'Warnings: $warningItems items with issues',
+//                 style: const TextStyle(
+//                   color: Colors.orange,
+//                   fontSize: 16,
+//                   fontWeight: FontWeight.bold,
+//                 ),
+//               ),
+//             ],
+//             if (pendingItems > 0) ...[
+//               const SizedBox(height: 8),
+//               Text(
+//                 'Pending: $pendingItems items not addressed',
+//                 style: const TextStyle(
+//                   color: Colors.grey,
+//                   fontSize: 16,
+//                   fontWeight: FontWeight.bold,
+//                 ),
+//               ),
+//             ],
+//           ],
+//         ),
+//         actions: [
+//           TextButton(
+//             onPressed: () => Navigator.of(context).pop(),
+//             child: const Text('Continue'),
+//           ),
+//           ElevatedButton(
+//             onPressed: () {
+//               Navigator.of(context).pop();
+//               Navigator.of(context).pop(); // Return to previous screen
+//             },
+//             style: ElevatedButton.styleFrom(
+//               backgroundColor: app_colors.secondary,
+//             ),
+//             child: const Text('Finish Inspection'),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       backgroundColor: app_colors.primary,
+//       body: Stack(
+//         children: [
+//           // Enhanced background gradient
+//           Container(
+//             decoration: BoxDecoration(
+//               gradient: LinearGradient(
+//                 begin: Alignment.topLeft,
+//                 end: Alignment.bottomRight,
+//                 colors: [
+//                   app_colors.primary,
+//                   app_colors.primary.withOpacity(0.9),
+//                   app_colors.darkPrimary,
+//                 ],
+//               ),
+//             ),
+//           ),
+
+//           // Background logo
+//           Positioned.fill(
+//             child: IgnorePointer(
+//               child: Align(
+//                 alignment: Alignment.center,
+//                 child: Opacity(
+//                   opacity: 0.03,
+//                   child: Image.asset(
+//                     'assets/images/logo.png',
+//                     width: 500,
+//                     fit: BoxFit.contain,
+//                   ),
+//                 ),
+//               ),
+//             ),
+//           ),
+
+//           SafeArea(
+//             child: Column(
+//               children: [
+//                 _buildHeader(),
+//                 Expanded(
+//                   child: SingleChildScrollView(
+//                     physics: const BouncingScrollPhysics(),
+//                     padding: const EdgeInsets.all(20),
+//                     child: Column(
+//                       children: [
+//                         _buildVoiceInterface(),
+//                         const SizedBox(height: 32),
+//                         _buildInspectionChecklist(),
+//                       ],
+//                     ),
+//                   ),
+//                 ),
+//               ],
+//             ),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+
+//   Widget _buildHeader() {
+//     return Container(
+//       padding: const EdgeInsets.all(20),
+//       child: Column(
+//         children: [
+//           Row(
+//             children: [
+//               GestureDetector(
+//                 onTap: () {
+//                   _stopListening(); // Stop listening before navigating away
+//                   Navigator.of(context).pop();
+//                 },
+//                 child: Container(
+//                   padding: const EdgeInsets.all(8),
+//                   decoration: BoxDecoration(
+//                     color: Colors.white.withOpacity(0.1),
+//                     borderRadius: BorderRadius.circular(12),
+//                     border: Border.all(
+//                       color: Colors.white.withOpacity(0.2),
+//                       width: 1,
+//                     ),
+//                   ),
+//                   child: Icon(
+//                     Icons.arrow_back,
+//                     color: Colors.white,
+//                     size: 24,
+//                   ),
+//                 ),
+//               ),
+//               const Spacer(),
+//               Column(
+//                 crossAxisAlignment: CrossAxisAlignment.end,
+//                 children: [
+//                   Text(
+//                     widget.aircraftModel,
+//                     style: const TextStyle(
+//                       color: Colors.white,
+//                       fontSize: 18,
+//                       fontWeight: FontWeight.bold,
+//                     ),
+//                   ),
+//                   Text(
+//                     'RP: ${widget.rpNumber}',
+//                     style: TextStyle(
+//                       color: Colors.white.withOpacity(0.8),
+//                       fontSize: 14,
+//                     ),
+//                   ),
+//                   if (_userType != null) ...[
+//                     Text(
+//                       '${_userType} Inspection',
+//                       style: TextStyle(
+//                         color: app_colors.secondary,
+//                         fontSize: 14,
+//                         fontWeight: FontWeight.bold,
+//                       ),
+//                     ),
+//                   ],
+//                 ],
+//               ),
+//             ],
+//           ),
+//           const SizedBox(height: 20),
+//           const Text(
+//             'Voice-Controlled Inspection',
+//             style: TextStyle(
+//               color: Colors.white,
+//               fontSize: 28,
+//               fontWeight: FontWeight.bold,
+//             ),
+//           ),
+//           const SizedBox(height: 8),
+//           Text(
+//             _userType != null
+//                 ? 'Hands-free ${_userType!.toLowerCase()} inspection in progress'
+//                 : 'Hands-free inspection in progress',
+//             style: TextStyle(
+//               color: Colors.white.withOpacity(0.8),
+//               fontSize: 16,
+//             ),
+//           ),
+//           // Add dropdown for mechanics to select inspection type
+//           if (_userType == 'Mechanic') ...[
+//             const SizedBox(height: 16),
+//             Container(
+//               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+//               decoration: BoxDecoration(
+//                 color: Colors.white.withOpacity(0.1),
+//                 borderRadius: BorderRadius.circular(12),
+//                 border: Border.all(
+//                   color: Colors.white.withOpacity(0.2),
+//                   width: 1,
+//                 ),
+//               ),
+//               child: Row(
+//                 mainAxisSize: MainAxisSize.min,
+//                 children: [
+//                   const Text(
+//                     'Inspection Type:',
+//                     style: TextStyle(
+//                       color: Colors.white,
+//                       fontSize: 16,
+//                       fontWeight: FontWeight.w500,
+//                     ),
+//                   ),
+//                   const SizedBox(width: 12),
+//                   DropdownButton<String>(
+//                     value: _inspectionType,
+//                     items: _inspectionTypes.map((String type) {
+//                       return DropdownMenuItem<String>(
+//                         value: type,
+//                         child: Text(
+//                           type,
+//                           style: const TextStyle(
+//                             color: Colors.white,
+//                             fontSize: 16,
+//                           ),
+//                         ),
+//                       );
+//                     }).toList(),
+//                     onChanged: (String? newValue) {
+//                       if (newValue != null) {
+//                         _debouncedSetState(() {
+//                           _inspectionType = newValue;
+//                           _currentTaskIndex =
+//                               0; // Reset to first task when changing inspection type
+//                           _taskCompleted = false; // Reset task completion flag
+//                         });
+//                         // Cancel any existing timers
+//                         _responseTimeoutTimer?.cancel();
+//                         // Restart the inspection with the new type
+//                         Future.delayed(const Duration(milliseconds: 300), () {
+//                           _readCurrentTask();
+//                         });
+//                       }
+//                     },
+//                     dropdownColor: app_colors.primary,
+//                     icon: Icon(
+//                       Icons.arrow_drop_down,
+//                       color: Colors.white.withOpacity(0.8),
+//                     ),
+//                     underline: Container(),
+//                   ),
+//                 ],
+//               ),
+//             ),
+//           ],
+//         ],
+//       ),
+//     );
+//   }
+
+//   Widget _buildVoiceInterface() {
+//     return Container(
+//       decoration: BoxDecoration(
+//         borderRadius: BorderRadius.circular(24),
+//         boxShadow: [
+//           BoxShadow(
+//             color: Colors.black.withOpacity(0.2),
+//             blurRadius: 20,
+//             offset: const Offset(0, 8),
+//           ),
+//         ],
+//       ),
+//       child: ClipRRect(
+//         borderRadius: BorderRadius.circular(24),
+//         child: BackdropFilter(
+//           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+//           child: Container(
+//             padding: const EdgeInsets.all(24),
+//             decoration: BoxDecoration(
+//               color: Colors.white.withOpacity(0.1),
+//               borderRadius: BorderRadius.circular(24),
+//               border: Border.all(
+//                 color: Colors.white.withOpacity(0.2),
+//                 width: 1,
+//               ),
+//             ),
+//             child: Column(
+//               children: [
+//                 // Voice indicator (no button needed for hands-free)
+//                 AnimatedBuilder(
+//                   animation:
+//                       Listenable.merge([_pulseAnimation, _waveAnimation]),
+//                   builder: (context, child) {
+//                     return Container(
+//                       width: 120,
+//                       height: 120,
+//                       decoration: BoxDecoration(
+//                         shape: BoxShape.circle,
+//                         color: _isListening
+//                             ? app_colors.secondary.withOpacity(0.8)
+//                             : app_colors.secondary,
+//                         boxShadow: _isListening
+//                             ? [
+//                                 BoxShadow(
+//                                   color: app_colors.secondary.withOpacity(0.4),
+//                                   blurRadius: 20 * _pulseAnimation.value,
+//                                   spreadRadius: 5 * _pulseAnimation.value,
+//                                 ),
+//                               ]
+//                             : [
+//                                 BoxShadow(
+//                                   color: app_colors.secondary.withOpacity(0.3),
+//                                   blurRadius: 15,
+//                                   offset: const Offset(0, 5),
+//                                 ),
+//                               ],
+//                       ),
+//                       child: Transform.scale(
+//                         scale: _isListening ? _pulseAnimation.value : 1.0,
+//                         child: Icon(
+//                           _isListening
+//                               ? Icons.mic
+//                               : _isProcessing
+//                                   ? Icons.hourglass_empty
+//                                   : Icons.mic_none,
+//                           size: 48,
+//                           color: Colors.white,
+//                         ),
+//                       ),
+//                     );
+//                   },
+//                 ),
+
+//                 const SizedBox(height: 24),
+
+//                 // Status text
+//                 Container(
+//                   padding:
+//                       const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+//                   decoration: BoxDecoration(
+//                     color: Colors.white.withOpacity(0.1),
+//                     borderRadius: BorderRadius.circular(16),
+//                     border: Border.all(
+//                       color: Colors.white.withOpacity(0.2),
+//                       width: 1,
+//                     ),
+//                   ),
+//                   child: Text(
+//                     _lastRecognizedText,
+//                     textAlign: TextAlign.center,
+//                     style: const TextStyle(
+//                       color: Colors.white,
+//                       fontSize: 16,
+//                       fontWeight: FontWeight.w500,
+//                     ),
+//                   ),
+//                 ),
+
+//                 const SizedBox(height: 16),
+
+//                 Text(
+//                   _isListening
+//                       ? 'Listening... Speak commands naturally. Say "done" or "problem"'
+//                       : 'Initializing hands-free inspection',
+//                   textAlign: TextAlign.center,
+//                   style: TextStyle(
+//                     color: Colors.white.withOpacity(0.7),
+//                     fontSize: 14,
+//                   ),
+//                 ),
+//               ],
+//             ),
+//           ),
+//         ),
+//       ),
+//     );
+//   }
+
+//   Widget _buildInspectionChecklist() {
+//     return Container(
+//       decoration: BoxDecoration(
+//         borderRadius: BorderRadius.circular(20),
+//         boxShadow: [
+//           BoxShadow(
+//             color: Colors.black.withOpacity(0.1),
+//             blurRadius: 15,
+//             offset: const Offset(0, 5),
+//           ),
+//         ],
+//       ),
+//       child: ClipRRect(
+//         borderRadius: BorderRadius.circular(20),
+//         child: BackdropFilter(
+//           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+//           child: Container(
+//             padding: const EdgeInsets.all(20),
+//             decoration: BoxDecoration(
+//               color: Colors.white.withOpacity(0.08),
+//               borderRadius: BorderRadius.circular(20),
+//               border: Border.all(
+//                 color: Colors.white.withOpacity(0.15),
+//                 width: 1,
+//               ),
+//             ),
+//             child: Column(
+//               crossAxisAlignment: CrossAxisAlignment.start,
+//               children: [
+//                 Row(
+//                   children: [
+//                     Container(
+//                       width: 4,
+//                       height: 24,
+//                       decoration: BoxDecoration(
+//                         color: app_colors.secondary,
+//                         borderRadius: BorderRadius.circular(2),
+//                       ),
+//                     ),
+//                     const SizedBox(width: 12),
+//                     const Text(
+//                       'Inspection Checklist',
+//                       style: TextStyle(
+//                         color: Colors.white,
+//                         fontSize: 20,
+//                         fontWeight: FontWeight.bold,
+//                       ),
+//                     ),
+//                     const Spacer(),
+//                     _buildProgressIndicator(),
+//                   ],
+//                 ),
+//                 const SizedBox(height: 20),
+//                 ...(_currentInspectionItems
+//                     .map((item) => _buildChecklistItem(item))
+//                     .toList()),
+//               ],
+//             ),
+//           ),
+//         ),
+//       ),
+//     );
+//   }
+
+//   Widget _buildProgressIndicator() {
+//     final completed =
+//         _currentInspectionItems.where((item) => item.isCompleted).length;
+//     final total = _currentInspectionItems.length;
+//     final progress = total > 0 ? completed / total : 0.0;
+
+//     return Container(
+//       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+//       decoration: BoxDecoration(
+//         color: Colors.white.withOpacity(0.1),
+//         borderRadius: BorderRadius.circular(12),
+//         border: Border.all(
+//           color: Colors.white.withOpacity(0.2),
+//           width: 1,
+//         ),
+//       ),
+//       child: Text(
+//         '$completed/$total',
+//         style: const TextStyle(
+//           color: Colors.white,
+//           fontWeight: FontWeight.bold,
+//         ),
+//       ),
+//     );
+//   }
+
+//   Widget _buildChecklistItem(InspectionItem item) {
+//     // Determine the background color based on state
+//     Color backgroundColor;
+//     Color borderColor;
+//     IconData iconData;
+//     Color iconColor;
+
+//     if (item.isCompleted) {
+//       backgroundColor = Colors.green.withOpacity(0.1);
+//       borderColor = Colors.green.withOpacity(0.3);
+//       iconData = Icons.check;
+//       iconColor = Colors.green;
+//     } else if (item.hasWarning) {
+//       backgroundColor = Colors.orange.withOpacity(0.1);
+//       borderColor = Colors.orange.withOpacity(0.3);
+//       iconData = Icons.warning;
+//       iconColor = Colors.orange;
+//     } else {
+//       backgroundColor = Colors.white.withOpacity(0.05);
+//       borderColor = Colors.white.withOpacity(0.1);
+//       iconData = Icons.circle_outlined;
+//       iconColor = Colors.white.withOpacity(0.7);
+//     }
+
+//     return Container(
+//       margin: const EdgeInsets.only(bottom: 12),
+//       padding: const EdgeInsets.all(16),
+//       decoration: BoxDecoration(
+//         color: backgroundColor,
+//         borderRadius: BorderRadius.circular(16),
+//         border: Border.all(
+//           color: borderColor,
+//           width: 1,
+//         ),
+//       ),
+//       child: Row(
+//         children: [
+//           Container(
+//             width: 32,
+//             height: 32,
+//             decoration: BoxDecoration(
+//               shape: BoxShape.circle,
+//               color: item.isCompleted || item.hasWarning
+//                   ? iconColor
+//                   : Colors.white.withOpacity(0.2),
+//               border: Border.all(
+//                 color: item.isCompleted || item.hasWarning
+//                     ? iconColor
+//                     : Colors.white.withOpacity(0.3),
+//                 width: 2,
+//               ),
+//             ),
+//             child: Icon(
+//               iconData,
+//               color: item.isCompleted || item.hasWarning
+//                   ? Colors.white
+//                   : Colors.white.withOpacity(0.7),
+//               size: 18,
+//             ),
+//           ),
+//           const SizedBox(width: 16),
+//           Expanded(
+//             child: Column(
+//               crossAxisAlignment: CrossAxisAlignment.start,
+//               children: [
+//                 Text(
+//                   item.title,
+//                   style: TextStyle(
+//                     color: Colors.white,
+//                     fontSize: 16,
+//                     fontWeight: FontWeight.bold,
+//                     decoration:
+//                         item.isCompleted ? TextDecoration.lineThrough : null,
+//                   ),
+//                 ),
+//                 const SizedBox(height: 4),
+//                 Text(
+//                   item.description,
+//                   style: TextStyle(
+//                     color: Colors.white.withOpacity(0.7),
+//                     fontSize: 14,
+//                   ),
+//                 ),
+//                 if (item.isCompleted && item.completedAt != null) ...[
+//                   const SizedBox(height: 4),
+//                   Text(
+//                     'Completed at ${item.completedAt!.hour.toString().padLeft(2, '0')}:${item.completedAt!.minute.toString().padLeft(2, '0')}',
+//                     style: TextStyle(
+//                       color: Colors.green.withOpacity(0.8),
+//                       fontSize: 12,
+//                       fontWeight: FontWeight.w500,
+//                     ),
+//                   ),
+//                 ],
+//                 if (item.hasWarning && item.warningAt != null) ...[
+//                   const SizedBox(height: 4),
+//                   Text(
+//                     'Warning at ${item.warningAt!.hour.toString().padLeft(2, '0')}:${item.warningAt!.minute.toString().padLeft(2, '0')}',
+//                     style: TextStyle(
+//                       color: Colors.orange.withOpacity(0.8),
+//                       fontSize: 12,
+//                       fontWeight: FontWeight.w500,
+//                     ),
+//                   ),
+//                 ],
+//               ],
+//             ),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+// }
+
+// class InspectionItem {
+//   final String id;
+//   final String title;
+//   final String description;
+//   final List<String> commands;
+//   bool isCompleted;
+//   DateTime? completedAt;
+//   bool hasWarning; // New field for warning state
+//   DateTime? warningAt; // New field for warning timestamp
+
+//   InspectionItem({
+//     required this.id,
+//     required this.title,
+//     required this.description,
+//     required this.commands,
+//     this.isCompleted = false,
+//     this.completedAt,
+//     this.hasWarning = false, // Initialize warning state
+//     this.warningAt,
+//   });
+// }
