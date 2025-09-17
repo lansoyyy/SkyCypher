@@ -458,7 +458,7 @@ class _AircraftSelectionScreenState extends State<AircraftSelectionScreen> {
                 Navigator.of(context).push(
                   PageRouteBuilder(
                     pageBuilder: (context, animation, secondaryAnimation) =>
-                        SimplifiedVoiceInspectionScreen(
+                        VoiceInspectionScreen(
                       aircraftModel: title,
                       rpNumber: _selectedRpNumber!,
                     ),
