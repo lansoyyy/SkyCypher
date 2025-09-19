@@ -31,6 +31,8 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   late stt.SpeechToText _speech;
   bool _isListening = false;
   bool _isProcessing = false;
+  bool _isCommandProcessed =
+      false; // Flag to track if a command has been processed
   String _currentCommand = '';
   String _lastRecognizedText = 'Initializing...';
   String? _userType;
@@ -495,6 +497,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     setState(() {
       _isListening = true;
       _currentCommand = '';
+      _isCommandProcessed = false; // Reset the command processed flag
       _lastRecognizedText = 'Listening...';
     });
 
@@ -539,6 +542,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   }
 
   void _processCommand(String command) {
+    // Check if a command has already been processed
+    if (_isCommandProcessed) return;
+
     final lowerCommand = command.toLowerCase().trim();
 
     // Handle specific commands for task completion
@@ -549,6 +555,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       if (lowerCommand.contains('done') ||
           lowerCommand.contains('completed') ||
           lowerCommand.contains('complete')) {
+        // Mark command as processed to prevent duplicate processing
+        _isCommandProcessed = true;
+
         setState(() {
           currentItem.isCompleted = true;
           currentItem.completedAt = DateTime.now();
@@ -557,10 +566,12 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         HapticFeedback.lightImpact();
         _lastRecognizedText = 'Task completed: ${currentItem.title}';
 
-        // Move to next task
-        _currentTaskIndex++;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _readCurrentTask();
+        // Move to next task after a short delay
+        Future.delayed(const Duration(milliseconds: 1500), () {
+          if (mounted) {
+            _currentTaskIndex++;
+            _readCurrentTask();
+          }
         });
         return;
       }
@@ -570,6 +581,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
           lowerCommand.contains('problem') ||
           lowerCommand.contains('issue') ||
           lowerCommand.contains('not complete')) {
+        // Mark command as processed to prevent duplicate processing
+        _isCommandProcessed = true;
+
         setState(() {
           currentItem.isCompleted = false;
           currentItem.hasWarning = true;
@@ -578,10 +592,12 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         HapticFeedback.mediumImpact();
         _lastRecognizedText = 'Task has issue: ${currentItem.title}';
 
-        // Move to next task
-        _currentTaskIndex++;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _readCurrentTask();
+        // Move to next task after a short delay
+        Future.delayed(const Duration(milliseconds: 1500), () {
+          if (mounted) {
+            _currentTaskIndex++;
+            _readCurrentTask();
+          }
         });
         return;
       }
@@ -591,6 +607,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     if (lowerCommand.contains('complete') ||
         lowerCommand.contains('finish') ||
         lowerCommand.contains('inspection complete')) {
+      // Mark command as processed to prevent duplicate processing
+      _isCommandProcessed = true;
+
       _showCompletionDialog();
     }
   }
@@ -604,6 +623,8 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
 
       setState(() {
         _lastRecognizedText = 'Reading task: $textToSpeak';
+        _isCommandProcessed =
+            false; // Reset the command processed flag for the new task
       });
 
       // Stop listening while speaking
@@ -613,8 +634,13 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         // Add a small delay to ensure TTS is ready
         await Future.delayed(const Duration(milliseconds: 100));
 
+        if (textToSpeak == 'Final Walk-Around Pass') {
+          await _flutterTts.speak(textToSpeak);
+        } else {
+          await _flutterTts.speak('Please inspect $textToSpeak');
+        }
+
         // Speak the task
-        await _flutterTts.speak('Please check $textToSpeak');
       } catch (e) {
         print('Error speaking task: $e');
         setState(() {
@@ -622,7 +648,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         });
         // Continue to next task even if speaking fails
         Future.delayed(const Duration(milliseconds: 500), () {
-          _startListening();
+          if (mounted) {
+            _startListening();
+          }
         });
       }
     } else {
@@ -728,6 +756,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       setState(() {
         _mechanicCategory = newValue;
         _currentTaskIndex = 0; // Reset to first task when category changes
+        _isCommandProcessed = false; // Reset the command processed flag
       });
 
       // Read the first task of the new category
