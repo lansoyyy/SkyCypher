@@ -32,7 +32,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   bool _isListening = false;
   bool _isProcessing = false;
   bool _isCommandProcessed =
-      false; // Flag to track if a command has been processed
+      false; // Flag to prevent multiple command processing
   String _currentCommand = '';
   String _lastRecognizedText = 'Initializing...';
   String? _userType;
@@ -507,6 +507,10 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
 
     // Start listening for speech
     _speech.listen(
+      listenOptions: stt.SpeechListenOptions(
+        partialResults: false, // Changed to false to only process final results
+        listenMode: stt.ListenMode.confirmation,
+      ),
       onResult: (result) {
         setState(() {
           _currentCommand = result.recognizedWords;
@@ -555,8 +559,11 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       if (lowerCommand.contains('done') ||
           lowerCommand.contains('completed') ||
           lowerCommand.contains('complete')) {
-        // Mark command as processed to prevent duplicate processing
+        // Mark command as processed to prevent multiple processing
         _isCommandProcessed = true;
+
+        // Stop listening to prevent multiple processing
+        _stopListening();
 
         setState(() {
           currentItem.isCompleted = true;
@@ -581,8 +588,11 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
           lowerCommand.contains('problem') ||
           lowerCommand.contains('issue') ||
           lowerCommand.contains('not complete')) {
-        // Mark command as processed to prevent duplicate processing
+        // Mark command as processed to prevent multiple processing
         _isCommandProcessed = true;
+
+        // Stop listening to prevent multiple processing
+        _stopListening();
 
         setState(() {
           currentItem.isCompleted = false;
@@ -607,9 +617,11 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     if (lowerCommand.contains('complete') ||
         lowerCommand.contains('finish') ||
         lowerCommand.contains('inspection complete')) {
-      // Mark command as processed to prevent duplicate processing
+      // Mark command as processed to prevent multiple processing
       _isCommandProcessed = true;
 
+      // Stop listening to prevent multiple processing
+      _stopListening();
       _showCompletionDialog();
     }
   }
@@ -624,7 +636,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       setState(() {
         _lastRecognizedText = 'Reading task: $textToSpeak';
         _isCommandProcessed =
-            false; // Reset the command processed flag for the new task
+            false; // Reset the command processed flag for new task
       });
 
       // Stop listening while speaking
@@ -756,7 +768,6 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       setState(() {
         _mechanicCategory = newValue;
         _currentTaskIndex = 0; // Reset to first task when category changes
-        _isCommandProcessed = false; // Reset the command processed flag
       });
 
       // Read the first task of the new category

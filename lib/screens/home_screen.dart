@@ -104,18 +104,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         setState(() {
           _userEmail = currentUser.email;
           _userType = userData['userType'] as String?;
-          // Extract and format name from email (part before @)
-          String emailPrefix = _userEmail?.split('@').first ?? 'user';
+          // Get name from user data if available
+          _userName = userData['name'] as String?;
 
-          // Handle common separators and formatting
-          _userName = emailPrefix
-              .replaceAll(RegExp(r'[._-]'),
-                  ' ') // Replace dots, underscores, hyphens with spaces
-              .split(' ')
-              .where((word) => word.isNotEmpty) // Remove empty strings
-              .map((word) =>
-                  word[0].toUpperCase() + word.substring(1).toLowerCase())
-              .join(' ');
+          // If name is not available, extract and format name from email (part before @)
+          if (_userName == null || _userName!.isEmpty) {
+            String emailPrefix = _userEmail?.split('@').first ?? 'user';
+
+            // Handle common separators and formatting
+            _userName = emailPrefix
+                .replaceAll(RegExp(r'[._-]'),
+                    ' ') // Replace dots, underscores, hyphens with spaces
+                .split(' ')
+                .where((word) => word.isNotEmpty) // Remove empty strings
+                .map((word) =>
+                    word[0].toUpperCase() + word.substring(1).toLowerCase())
+                .join(' ');
+          }
 
           // Fallback if the formatting results in empty string
           if (_userName?.isEmpty == true) {
@@ -347,9 +352,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         : Text(
                             (_userName?.isNotEmpty == true
                                 ? _userName![0].toUpperCase()
-                                : _userEmail?.isNotEmpty == true
-                                    ? _userEmail![0].toUpperCase()
-                                    : 'U'),
+                                : 'U'),
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 24,
@@ -373,7 +376,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               ),
                             )
                           : Text(
-                              _userName ?? 'User',
+                              _userName?.split(' ')[0] ?? 'User',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 22,

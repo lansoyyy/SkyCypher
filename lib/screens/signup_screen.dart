@@ -17,9 +17,11 @@ class SignUpScreen extends StatefulWidget {
 class _SignUpScreenState extends State<SignUpScreen>
     with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
+  final TextEditingController _nameCtrl = TextEditingController();
   final TextEditingController _emailCtrl = TextEditingController();
   final TextEditingController _passwordCtrl = TextEditingController();
   final TextEditingController _confirmPasswordCtrl = TextEditingController();
+  final FocusNode _nameFocus = FocusNode();
   final FocusNode _emailFocus = FocusNode();
   final FocusNode _passwordFocus = FocusNode();
   final FocusNode _confirmPasswordFocus = FocusNode();
@@ -70,9 +72,11 @@ class _SignUpScreenState extends State<SignUpScreen>
   void dispose() {
     _fadeController.dispose();
     _slideController.dispose();
+    _nameCtrl.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmPasswordCtrl.dispose();
+    _nameFocus.dispose();
     _emailFocus.dispose();
     _passwordFocus.dispose();
     _confirmPasswordFocus.dispose();
@@ -260,6 +264,8 @@ class _SignUpScreenState extends State<SignUpScreen>
       children: [
         _buildUserTypeField(),
         const SizedBox(height: 20),
+        _buildNameField(),
+        const SizedBox(height: 20),
         _buildEmailField(),
         const SizedBox(height: 20),
         _buildPasswordField(),
@@ -309,6 +315,45 @@ class _SignUpScreenState extends State<SignUpScreen>
             hint: 'Select user type',
             prefixIcon: Icons.person_outline,
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNameField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Name',
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.9),
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: _nameCtrl,
+          focusNode: _nameFocus,
+          textInputAction: TextInputAction.next,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+          ),
+          decoration: _modernFieldDecoration(
+            hint: 'Enter your name',
+            prefixIcon: Icons.person_outline,
+          ),
+          validator: (v) {
+            if (v == null || v.isEmpty) {
+              return 'Name is required';
+            }
+            if (v.trim().length < 2) {
+              return 'Please enter a valid name';
+            }
+            return null;
+          },
         ),
       ],
     );
@@ -680,6 +725,7 @@ class _SignUpScreenState extends State<SignUpScreen>
         email: _emailCtrl.text.trim(),
         password: _passwordCtrl.text,
         userType: _userType!,
+        name: _nameCtrl.text.trim(),
       );
 
       if (mounted) {
