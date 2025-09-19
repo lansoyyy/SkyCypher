@@ -546,7 +546,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       final currentItem = _currentInspectionItems[_currentTaskIndex];
 
       // Check for completion commands
-      if (lowerCommand == 'done' || lowerCommand == 'completed') {
+      if (lowerCommand.contains('done') ||
+          lowerCommand.contains('completed') ||
+          lowerCommand.contains('complete')) {
         setState(() {
           currentItem.isCompleted = true;
           currentItem.completedAt = DateTime.now();
@@ -564,7 +566,10 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       }
 
       // Check for warning commands
-      if (lowerCommand == 'not completed' || lowerCommand == 'problem') {
+      if (lowerCommand.contains('not completed') ||
+          lowerCommand.contains('problem') ||
+          lowerCommand.contains('issue') ||
+          lowerCommand.contains('not complete')) {
         setState(() {
           currentItem.isCompleted = false;
           currentItem.hasWarning = true;
