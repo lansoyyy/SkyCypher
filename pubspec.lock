@@ -81,14 +81,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.3.4+2"
-  crypto:
-    dependency: transitive
-    description:
-      name: crypto
-      sha256: "1e445881f28f22d6140f181e07737b22f1e099a5e1ff94b0af2f9e4a463f4855"
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.0.6"
   cupertino_icons:
     dependency: "direct main"
     description:
@@ -97,14 +89,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.8"
-  deepgram_speech_to_text:
-    dependency: "direct main"
+  daily_flutter:
+    dependency: transitive
     description:
-      name: deepgram_speech_to_text
-      sha256: "474c0e889d931854065562084e40b18b642c9580e07ddfab3d10ab0fd78d1a58"
+      name: daily_flutter
+      sha256: da70e456c4636eeb03f6d6af9f30bbf7b044f6a00e0c6411e544f60025e3f809
       url: "https://pub.dev"
     source: hosted
-    version: "4.1.0"
+    version: "0.31.0"
   fake_async:
     dependency: transitive
     description:
@@ -113,6 +105,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.3.1"
+  ffi:
+    dependency: transitive
+    description:
+      name: ffi
+      sha256: "16ed7b077ef01ad6170a3d0c57caa4a112a38d7a2ed5602e0aca9ca6f3d98da6"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.3"
   file_selector_linux:
     dependency: transitive
     description:
@@ -264,6 +264,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "8.2.12"
+  freezed_annotation:
+    dependency: transitive
+    description:
+      name: freezed_annotation
+      sha256: c2e2d632dd9b8a2b7751117abcfc2b4888ecfe181bd9fca7170d9ef02e595fe2
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.4.4"
   http:
     dependency: transitive
     description:
@@ -400,6 +408,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "5.1.1"
+  logging:
+    dependency: transitive
+    description:
+      name: logging
+      sha256: c8245ada5f1717ed44271ed1c26b8ce85ca3228fd2ffdb75468ab01979309d61
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.3.0"
   matcher:
     dependency: transitive
     description:
@@ -565,6 +581,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.3.0"
+  synchronized:
+    dependency: transitive
+    description:
+      name: synchronized
+      sha256: "69fe30f3a8b04a0be0c15ae6490fc859a78ef4c43ae2dd5e8a623d45bfcf9225"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.3.0+3"
   term_glyph:
     dependency: transitive
     description:
@@ -589,14 +613,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.0"
-  universal_file:
-    dependency: transitive
+  vapi:
+    dependency: "direct main"
     description:
-      name: universal_file
-      sha256: d1a957fccaad2a32023b62fe435b273ee47aaf2eb804709795e4bf4afff50960
+      name: vapi
+      sha256: dd12b49b07907cb280e9b40e1388965866aea81fe4622361ff48b47c5285f7f4
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.0"
+    version: "0.1.0"
   vector_math:
     dependency: transitive
     description:
@@ -613,14 +637,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "14.3.0"
-  wav:
-    dependency: transitive
-    description:
-      name: wav
-      sha256: "2c932c74a531befedcb1d44bb24dd95fea8c801590d560c73fa94f35c5ef6551"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.5.0"
   web:
     dependency: transitive
     description:
@@ -629,22 +645,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.1"
-  web_socket:
-    dependency: transitive
-    description:
-      name: web_socket
-      sha256: "34d64019aa8e36bf9842ac014bb5d2f5586ca73df5e4d9bf5c936975cae6982c"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.1"
-  web_socket_channel:
-    dependency: transitive
-    description:
-      name: web_socket_channel
-      sha256: d645757fb0f4773d602444000a8131ff5d48c9e47adfe9772652dd1a4f2d45c8
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.0.3"
 sdks:
   dart: ">=3.6.1 <4.0.0"
   flutter: ">=3.27.0"

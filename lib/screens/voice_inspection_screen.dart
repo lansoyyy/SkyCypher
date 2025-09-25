@@ -2,9 +2,130 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:skycypher/utils/colors.dart' as app_colors;
-import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:vapi/vapi.dart';
 import 'package:skycypher/services/auth_service.dart';
-import 'package:flutter_tts/flutter_tts.dart';
+
+// Vapi Configuration
+// Replace these with your actual Vapi credentials
+const String VAPI_PUBLIC_KEY = 'ca42d3fc-9bd1-47db-b20a-6e03e52d26d4';
+const String VAPI_ASSISTANT_ID = '22f47629-b48d-4c27-8f0f-fbd3c920b8e8';
+
+// Instructions for the Vapi assistant
+const String VAPI_ASSISTANT_INSTRUCTIONS = '''
+# Aircraft Inspection Assistant Prompt
+
+## Identity & Purpose
+
+You are an aircraft inspection assistant. Your primary purpose is to guide pilots and mechanics through voice-controlled aircraft inspections efficiently and safely. You will read each inspection task clearly and wait for the user to indicate completion or issues with the task.
+
+## Voice & Persona
+
+### Personality
+- Sound professional, clear, and efficient
+- Project a knowledgeable and precise demeanor
+- Maintain a calm and focused tone throughout the inspection
+- Convey confidence and competence in aircraft inspection procedures
+
+### Speech Characteristics
+- Use clear, concise language with proper aviation terminology
+- Speak at a measured pace, especially when reading inspection items
+- Include brief confirmation phrases like "Please inspect [item]" or "Next task: [item]"
+- Pronounce technical terms and inspection items correctly and clearly
+
+## Conversation Flow
+
+### Introduction
+Start with: "Beginning aircraft inspection. Please follow the voice prompts for each inspection item."
+
+### Inspection Process
+1. Read each inspection item clearly: "Please inspect [item name]. [Brief description]."
+2. Wait for user response after each item
+3. Process user commands and provide appropriate feedback
+4. Move to the next item after receiving completion status
+
+### Command Recognition
+1. For completion: "Task completed. Moving to next item."
+2. For issues: "Issue noted. Moving to next item."
+3. For inspection end: "Inspection complete. Generating summary."
+
+### Completion and Wrap-up
+1. Summarize inspection results: "Inspection summary: [number] items completed, [number] items with issues."
+2. Provide final confirmation: "Thank you for completing the aircraft inspection."
+3. Close politely: "Is there anything else you need assistance with?"
+
+## Response Guidelines
+
+- Keep responses concise and focused on inspection information
+- Use explicit confirmation for task completion: "Task [item name] marked as completed."
+- Ask only one question at a time
+- Use clear aviation terminology
+- Provide brief but complete task descriptions
+
+## Scenario Handling
+
+### For Pilot Inspections
+1. Follow standard pre-flight inspection sequence
+2. Emphasize safety-critical items
+3. Provide clear guidance for exterior and interior checks
+4. Include final walk-around verification
+
+### For Mechanic Inspections
+1. Adapt to the selected inspection category (Preflight or Maintenance)
+2. Provide more detailed technical guidance for maintenance items
+3. Emphasize structural and system integrity checks
+4. Include verification of maintenance-specific components
+
+### For Task Completion
+1. Acknowledge completion: "Task [item name] completed successfully."
+2. Record completion timestamp
+3. Move to next item: "Next task: [item name]."
+
+### For Issues/Warnings
+1. Acknowledge issue: "Issue noted for [item name]."
+2. Record warning timestamp
+3. Move to next item: "Next task: [item name]."
+
+### For Inspection Completion
+1. Generate summary of all inspection items
+2. Report completed items, items with issues, and pending items
+3. Provide final confirmation: "Inspection complete. Thank you for your thoroughness."
+
+## Knowledge Base
+
+### Inspection Categories
+- Pilot Pre-flight: Standard external and internal checks before flight
+- Mechanic Preflight: Detailed technical inspection before flight
+- Mechanic Maintenance: Comprehensive inspection of aircraft systems and components
+
+### Inspection Items
+- Fuel System: Fuel tank quality, sump drain checks
+- Flight Controls: Ailerons, flaps, control surfaces inspection
+- Landing Gear: Tire condition, brake system checks
+- Airframe: Fuselage, wings, tail surfaces inspection
+- Engine: Engine compartment, propeller, spinner checks
+- Electrical: Wiring, avionics, antenna checks
+
+### Safety Considerations
+- Emphasize safety-critical inspection items
+- Remind user to follow proper inspection procedures
+- Encourage thoroughness in all inspection areas
+- Note any items requiring special attention
+
+## Response Refinement
+
+- When reading inspection items: "Please inspect [item name]. [Brief description]."
+- For task completion: "Task completed. Moving to next item."
+- For issues: "Issue noted. Moving to next item."
+- For complex items: "Please carefully inspect [item name]. Pay special attention to [specific aspect]."
+
+## Call Management
+
+- If multiple commands are detected: "Processing command: [command]."
+- If unclear command: "Please repeat your command."
+- If user needs help: "Say 'done' to complete a task, 'problem' for issues, or 'inspection complete' to finish."
+
+Remember that your ultimate goal is to guide the user through a thorough and efficient aircraft inspection while ensuring all safety-critical items are properly checked. Accuracy in inspection guidance is your top priority, followed by clear communication of each inspection item.
+''';
 
 class VoiceInspectionScreen extends StatefulWidget {
   final String aircraftModel;
@@ -27,8 +148,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   late Animation<double> _pulseAnimation;
   late Animation<double> _waveAnimation;
 
-  // Speech to text implementation
-  late stt.SpeechToText _speech;
+  // Vapi implementation
+  VapiClient? _vapiClient;
+  VapiCall? _currentCall;
   bool _isListening = false;
   bool _isProcessing = false;
   bool _isCommandProcessed =
@@ -37,10 +159,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   String _lastRecognizedText = 'Initializing...';
   String? _userType;
   String _mechanicCategory = 'Preflight'; // New: Category for mechanics
-
-  // Text to speech implementation
-  late FlutterTts _flutterTts;
-  bool _isSpeaking = false;
+  bool _isCallActive = false;
 
   // Inspection checklists for different user types
   List<InspectionItem> _pilotInspectionItems = [];
@@ -69,15 +188,8 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     // Fetch user data to determine user type
     _fetchUserData();
 
-    // Initialize speech to text
-    _speech = stt.SpeechToText();
-    _initializeSpeechRecognition();
-
-    // Initialize text to speech
-    _flutterTts = FlutterTts();
-    _initializeTextToSpeech().then((_) {
-      print('TTS initialization completed');
-    });
+    // Initialize Vapi client
+    _initializeVapiClient();
 
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1500),
@@ -373,167 +485,355 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         ],
       ),
     ];
-
-    // Start reading the first task after a short delay to ensure everything is initialized
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (_currentInspectionItems.isNotEmpty) {
-          _readCurrentTask();
-        }
-      });
-    });
   }
 
-  Future<void> _initializeSpeechRecognition() async {
+  Future<void> _initializeVapiClient() async {
     setState(() {
-      _lastRecognizedText = 'Initializing speech recognition...';
+      _lastRecognizedText = 'Initializing voice assistant...';
     });
 
     try {
-      bool available = await _speech.initialize(
-        onError: (error) => _onSpeechError(error),
-        onStatus: (status) => _onSpeechStatus(status),
-      );
+      // Check if we have valid configuration
+      if (VAPI_PUBLIC_KEY == 'your-public-key-here' ||
+          VAPI_ASSISTANT_ID == 'your-assistant-id-here') {
+        // Show configuration dialog if credentials are not set
+        _showConfigurationDialog();
+        return;
+      }
 
-      if (available) {
-        setState(() {
-          _lastRecognizedText = _userType != null
-              ? 'Ready to listen. Say commands for ${_userType!.toLowerCase()} inspection'
-              : 'Ready to listen. Say inspection commands';
-        });
+      // Initialize Vapi client with the configured public key
+      _vapiClient = VapiClient(VAPI_PUBLIC_KEY);
 
-        // Start listening automatically after initialization
-        _startListening();
-      } else {
-        setState(() {
-          _lastRecognizedText = 'Speech recognition not available';
-        });
+      setState(() {
+        _lastRecognizedText = _userType != null
+            ? 'Ready to listen. Say commands for ${_userType!.toLowerCase()} inspection'
+            : 'Ready to listen. Say inspection commands';
+      });
+
+      // Don't start the call automatically here, let the user start it when needed
+    } catch (e) {
+      setState(() {
+        _lastRecognizedText = 'Error initializing voice assistant: $e';
+      });
+    }
+  }
+
+  void _showConfigurationDialog() {
+    final publicKeyController = TextEditingController(text: VAPI_PUBLIC_KEY);
+    final assistantIdController =
+        TextEditingController(text: VAPI_ASSISTANT_ID);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: app_colors.primary,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Vapi Configuration',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Please enter your Vapi credentials to enable voice features:',
+              style: TextStyle(color: Colors.white),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: publicKeyController,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Public Key',
+                labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: app_colors.secondary),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: assistantIdController,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Assistant ID',
+                labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: app_colors.secondary),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              // Continue without voice features
+              setState(() {
+                _lastRecognizedText =
+                    'Voice features disabled. Configure Vapi to enable.';
+              });
+            },
+            child: const Text('Continue Without Voice'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              // In a real implementation, you would save these credentials
+              // For now, we'll just update the state and continue
+              setState(() {
+                _lastRecognizedText =
+                    'Vapi configured. Restarting voice assistant...';
+              });
+
+              // Initialize with the new credentials
+              _vapiClient = VapiClient(publicKeyController.text);
+              _startVapiCall();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: app_colors.secondary,
+            ),
+            child: const Text('Save & Continue'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _handleVapiEvent(VapiEvent event) {
+    switch (event.label) {
+      case "call-start":
+        _handleCallStart();
+        break;
+      case "call-end":
+        _handleCallEnd();
+        break;
+      case "message":
+        _handleMessage(event);
+        break;
+    }
+  }
+
+  void _handleCallStart() {
+    setState(() {
+      _isCallActive = true;
+      _isListening = true;
+      _lastRecognizedText = 'Voice assistant active. Listening for commands...';
+    });
+    debugPrint('Vapi call started');
+
+    // The first message will be handled by the assistant's firstMessage parameter
+    // No need to call _readCurrentTask here as the assistant will handle the flow
+  }
+
+  void _handleCallEnd() {
+    setState(() {
+      _isCallActive = false;
+      _isListening = false;
+      _currentCall = null;
+      _lastRecognizedText = 'Voice assistant disconnected';
+    });
+    debugPrint('Vapi call ended');
+  }
+
+  void _handleMessage(VapiEvent event) {
+    // Process messages from Vapi
+    try {
+      if (event.value is Map<String, dynamic>) {
+        final message = event.value as Map<String, dynamic>;
+
+        // Handle transcript messages (user speech)
+        if (message['type'] == 'transcript') {
+          final transcript = message['content'] as String?;
+          if (transcript != null && transcript.isNotEmpty) {
+            setState(() {
+              _currentCommand = transcript;
+              _lastRecognizedText = 'Recognized: "$_currentCommand"';
+            });
+
+            // Process the command
+            _processCommand(_currentCommand);
+          }
+        }
+
+        // Handle conversation update messages (assistant speech)
+        if (message['type'] == 'conversation-update') {
+          final conversation = message['conversation'] as Map<String, dynamic>?;
+          if (conversation != null) {
+            final messages = conversation['messages'] as List?;
+            if (messages != null && messages.isNotEmpty) {
+              // Check if the last message is a Map before casting
+              final lastMessage = messages.last;
+              if (lastMessage is Map<String, dynamic>) {
+                if (lastMessage['role'] == 'assistant') {
+                  final content = lastMessage['content'] as String?;
+                  if (content != null && content.isNotEmpty) {
+                    setState(() {
+                      _lastRecognizedText = 'Assistant: $content';
+                    });
+
+                    // Update current task based on the assistant's message
+                    _updateCurrentTaskFromMessage(content);
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     } catch (e) {
-      setState(() {
-        _lastRecognizedText = 'Error initializing speech recognition: $e';
-      });
+      debugPrint('Error processing Vapi message: $e');
     }
+    debugPrint('Vapi message: ${event.value}');
   }
 
-  Future<void> _initializeTextToSpeech() async {
+  Future<void> _startVapiCall() async {
+    if (_vapiClient == null || _isCallActive) return;
+
     try {
-      await _flutterTts.setLanguage("en-US");
-      await _flutterTts.setSpeechRate(0.5);
-      await _flutterTts.setVolume(1.0);
-      await _flutterTts.setPitch(1.0);
-
-      print('TTS initialized successfully');
-
-      _flutterTts.setStartHandler(() {
-        print('TTS started speaking');
-        setState(() {
-          _isSpeaking = true;
-        });
-      });
-
-      _flutterTts.setCompletionHandler(() {
-        print('TTS finished speaking');
-        setState(() {
-          _isSpeaking = false;
-        });
-
-        // After speaking a task, listen for user response after a short delay
-        Future.delayed(const Duration(milliseconds: 500), () {
-          _startListening();
-        });
-      });
-
-      _flutterTts.setErrorHandler((msg) {
-        print('TTS Error: $msg');
-        setState(() {
-          _isSpeaking = false;
-          _lastRecognizedText = 'TTS Error: $msg';
-        });
-        // Resume listening even if TTS fails after a short delay
-        Future.delayed(const Duration(milliseconds: 500), () {
-          _startListening();
-        });
-      });
-
-      // Test TTS with a simple phrase to ensure it's working
-      await Future.delayed(const Duration(milliseconds: 1000));
-      print('Testing TTS with sample phrase');
-      // await _flutterTts.speak("Text to speech is ready");
-    } catch (e) {
-      print('Error initializing TTS: $e');
       setState(() {
-        _lastRecognizedText = 'Error initializing TTS: $e';
+        _isProcessing = true;
+        _lastRecognizedText = 'Starting voice assistant...';
+      });
+
+      // Start a new call using the configured assistant ID
+      final call = await _vapiClient!.start(
+        assistantId: VAPI_ASSISTANT_ID,
+        assistantOverrides: {
+          'firstMessage':
+              'Beginning aircraft inspection for ${widget.aircraftModel}. I will guide you through each inspection item. Please respond with "done" when you complete an item or "problem" if you find an issue. Let\'s start with the first item: ${_currentInspectionItems.isNotEmpty ? _currentInspectionItems[0].title : "No tasks available"}.',
+          'name': 'Aircraft Inspection Assistant',
+          'model': {
+            'model': 'gpt-4o',
+            'provider': 'openai',
+            'temperature': 0.5,
+            'messages': [
+              {
+                'role': 'system',
+                'content': '''
+You are an aircraft inspection assistant. Your task is to guide the user through a series of inspection items.
+
+Here is the list of inspection items for this ${_userType ?? 'Pilot'} inspection:
+${_currentInspectionItems.map((item) => '- ${item.title}: ${item.description}').join('\n')}
+
+Your conversation flow should be:
+1. Start with the first inspection item
+2. Wait for the user to respond with "done" (completed) or "problem" (issue found)
+3. When the user responds, acknowledge their response and move to the next item
+4. Continue this process for all inspection items
+5. When all items are complete, provide a summary and end the conversation
+
+For each item, say: "Please inspect [item name]. [Brief description]."
+
+When the user says "done", respond: "Task completed. Next item: [next item name]."
+
+When the user says "problem", respond: "Issue noted. Next item: [next item name]."
+
+If the user says "inspection complete" at any time, provide a summary of completed items and end the conversation.
+
+Keep your responses concise and focused on the inspection process.
+'''
+              }
+            ],
+          },
+          'voice': {'voiceId': 'Elliot', 'provider': 'vapi'},
+          'transcriber': {
+            'model': 'nova-3',
+            'language': 'en',
+            'provider': 'deepgram',
+            'endpointing': 150
+          },
+          'endCallMessage':
+              'Thank you for completing the aircraft inspection. Your inspection has been recorded. Have a safe flight.',
+        },
+      );
+
+      _currentCall = call;
+      call.onEvent.listen(_handleVapiEvent);
+
+      // Start animations
+      _pulseController.repeat(reverse: true);
+      _waveController.repeat();
+
+      HapticFeedback.heavyImpact();
+    } catch (e) {
+      debugPrint('Error starting Vapi call: $e');
+      setState(() {
+        _isProcessing = false;
+        _lastRecognizedText = 'Error starting voice assistant: $e';
       });
     }
   }
 
-  void _onSpeechError(dynamic error) {
-    setState(() {
-      _lastRecognizedText = 'Speech recognition error: $error';
-      _isListening = false;
-      _isProcessing = false;
-    });
-    _pulseController.stop();
-    _waveController.stop();
-  }
+  Future<void> _stopVapiCall() async {
+    if (!_isCallActive || _currentCall == null) return;
 
-  void _onSpeechStatus(String status) {
-    // Handle speech recognition status changes if needed
+    try {
+      setState(() {
+        _isProcessing = true;
+        _isListening = false;
+      });
+
+      await _currentCall?.stop();
+
+      // Stop animations
+      _pulseController.stop();
+      _waveController.stop();
+
+      setState(() {
+        _isProcessing = false;
+      });
+    } catch (e) {
+      debugPrint('Error stopping Vapi call: $e');
+      setState(() {
+        _isProcessing = false;
+        _lastRecognizedText = 'Error stopping voice assistant: $e';
+      });
+    }
   }
 
   @override
   void dispose() {
-    _stopListening(); // Stop listening when screen is disposed
+    _stopVapiCall(); // Stop Vapi call when screen is disposed
     _pulseController.dispose();
     _waveController.dispose();
-    _flutterTts.stop();
+    _currentCall?.dispose();
+    _vapiClient?.dispose();
     super.dispose();
   }
 
   void _startListening() async {
-    if (_isListening) return;
+    if (_isCallActive) return;
 
     setState(() {
-      _isListening = true;
       _currentCommand = '';
       _isCommandProcessed = false; // Reset the command processed flag
-      _lastRecognizedText = 'Listening...';
     });
 
-    HapticFeedback.heavyImpact();
-    _pulseController.repeat(reverse: true);
-    _waveController.repeat();
-
-    // Start listening for speech
-    _speech.listen(
-      listenOptions: stt.SpeechListenOptions(
-        partialResults: false, // Changed to false to only process final results
-        listenMode: stt.ListenMode.confirmation,
-      ),
-      onResult: (result) {
-        setState(() {
-          _currentCommand = result.recognizedWords;
-          _lastRecognizedText = 'Recognized: "$_currentCommand"';
-        });
-
-        // Process the command immediately
-        _processCommand(_currentCommand);
-      },
-    );
+    // Start Vapi call for listening
+    _startVapiCall();
   }
 
   void _stopListening() {
-    if (!_isListening) return;
+    if (!_isCallActive) return;
 
     setState(() {
-      _isListening = false;
       _isProcessing = true;
     });
 
-    _speech.stop();
-    _pulseController.stop();
-    _waveController.stop();
+    _stopVapiCall();
 
     // Process any final command
     if (_currentCommand.isNotEmpty) {
@@ -559,27 +859,8 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       if (lowerCommand.contains('done') ||
           lowerCommand.contains('completed') ||
           lowerCommand.contains('complete')) {
-        // Mark command as processed to prevent multiple processing
-        _isCommandProcessed = true;
-
-        // Stop listening to prevent multiple processing
-        _stopListening();
-
-        setState(() {
-          currentItem.isCompleted = true;
-          currentItem.completedAt = DateTime.now();
-          currentItem.hasWarning = false; // Clear any warning
-        });
-        HapticFeedback.lightImpact();
-        _lastRecognizedText = 'Task completed: ${currentItem.title}';
-
-        // Move to next task after a short delay
-        Future.delayed(const Duration(milliseconds: 1500), () {
-          if (mounted) {
-            _currentTaskIndex++;
-            _readCurrentTask();
-          }
-        });
+        _markCommandProcessed();
+        _markTaskCompleted(currentItem);
         return;
       }
 
@@ -588,27 +869,8 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
           lowerCommand.contains('problem') ||
           lowerCommand.contains('issue') ||
           lowerCommand.contains('not complete')) {
-        // Mark command as processed to prevent multiple processing
-        _isCommandProcessed = true;
-
-        // Stop listening to prevent multiple processing
-        _stopListening();
-
-        setState(() {
-          currentItem.isCompleted = false;
-          currentItem.hasWarning = true;
-          currentItem.warningAt = DateTime.now();
-        });
-        HapticFeedback.mediumImpact();
-        _lastRecognizedText = 'Task has issue: ${currentItem.title}';
-
-        // Move to next task after a short delay
-        Future.delayed(const Duration(milliseconds: 1500), () {
-          if (mounted) {
-            _currentTaskIndex++;
-            _readCurrentTask();
-          }
-        });
+        _markCommandProcessed();
+        _markTaskWithIssue(currentItem);
         return;
       }
     }
@@ -617,57 +879,63 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     if (lowerCommand.contains('complete') ||
         lowerCommand.contains('finish') ||
         lowerCommand.contains('inspection complete')) {
-      // Mark command as processed to prevent multiple processing
-      _isCommandProcessed = true;
-
-      // Stop listening to prevent multiple processing
-      _stopListening();
+      _markCommandProcessed();
       _showCompletionDialog();
     }
   }
 
-  Future<void> _readCurrentTask() async {
-    if (_currentTaskIndex < _currentInspectionItems.length) {
-      final currentItem = _currentInspectionItems[_currentTaskIndex];
-      final textToSpeak = currentItem.title;
+  void _markCommandProcessed() {
+    _isCommandProcessed = true;
+    // Don't stop listening here since Vapi will handle the continuous conversation
+  }
 
-      print('Reading task: $textToSpeak'); // Debug log
+  void _markTaskCompleted(InspectionItem item) {
+    setState(() {
+      item.isCompleted = true;
+      item.completedAt = DateTime.now();
+      item.hasWarning = false; // Clear any warning
+    });
+    HapticFeedback.lightImpact();
+    _lastRecognizedText = 'Task completed: ${item.title}';
 
-      setState(() {
-        _lastRecognizedText = 'Reading task: $textToSpeak';
-        _isCommandProcessed =
-            false; // Reset the command processed flag for new task
-      });
+    // Vapi will handle the conversation flow, so we don't need to move to the next task here
+  }
 
-      // Stop listening while speaking
-      _stopListening();
+  void _markTaskWithIssue(InspectionItem item) {
+    setState(() {
+      item.isCompleted = false;
+      item.hasWarning = true;
+      item.warningAt = DateTime.now();
+    });
+    HapticFeedback.mediumImpact();
+    _lastRecognizedText = 'Task has issue: ${item.title}';
 
-      try {
-        // Add a small delay to ensure TTS is ready
-        await Future.delayed(const Duration(milliseconds: 100));
+    // Vapi will handle the conversation flow, so we don't need to move to the next task here
+  }
 
-        if (textToSpeak == 'Final Walk-Around Pass') {
-          await _flutterTts.speak(textToSpeak);
-        } else {
-          await _flutterTts.speak('Please inspect $textToSpeak');
+  void _updateCurrentTaskFromMessage(String message) {
+    // Try to find which task is being mentioned in the message
+    for (int i = 0; i < _currentInspectionItems.length; i++) {
+      final item = _currentInspectionItems[i];
+      if (message.contains(item.title)) {
+        // Update the current task index
+        if (_currentTaskIndex != i) {
+          setState(() {
+            _currentTaskIndex = i;
+          });
         }
+        return;
+      }
+    }
 
-        // Speak the task
-      } catch (e) {
-        print('Error speaking task: $e');
+    // If no specific task is found, look for keywords like "next item" or "task completed"
+    if (message.contains('next item') || message.contains('task completed')) {
+      // Move to the next task if not at the end
+      if (_currentTaskIndex < _currentInspectionItems.length - 1) {
         setState(() {
-          _lastRecognizedText = 'Error reading task: $e';
-        });
-        // Continue to next task even if speaking fails
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted) {
-            _startListening();
-          }
+          _currentTaskIndex++;
         });
       }
-    } else {
-      // All tasks completed, show summary
-      _showCompletionDialog();
     }
   }
 
@@ -768,15 +1036,6 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       setState(() {
         _mechanicCategory = newValue;
         _currentTaskIndex = 0; // Reset to first task when category changes
-      });
-
-      // Read the first task of the new category
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (_currentInspectionItems.isNotEmpty) {
-            _readCurrentTask();
-          }
-        });
       });
     }
   }
@@ -1005,45 +1264,50 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
             ),
             child: Column(
               children: [
-                // Voice indicator (no button needed for hands-free)
+                // Voice indicator
                 AnimatedBuilder(
                   animation:
                       Listenable.merge([_pulseAnimation, _waveAnimation]),
                   builder: (context, child) {
-                    return Container(
-                      width: 120,
-                      height: 120,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _isListening
-                            ? app_colors.secondary.withOpacity(0.8)
-                            : app_colors.secondary,
-                        boxShadow: _isListening
-                            ? [
-                                BoxShadow(
-                                  color: app_colors.secondary.withOpacity(0.4),
-                                  blurRadius: 20 * _pulseAnimation.value,
-                                  spreadRadius: 5 * _pulseAnimation.value,
-                                ),
-                              ]
-                            : [
-                                BoxShadow(
-                                  color: app_colors.secondary.withOpacity(0.3),
-                                  blurRadius: 15,
-                                  offset: const Offset(0, 5),
-                                ),
-                              ],
-                      ),
-                      child: Transform.scale(
-                        scale: _isListening ? _pulseAnimation.value : 1.0,
-                        child: Icon(
-                          _isListening
-                              ? Icons.mic
-                              : _isProcessing
-                                  ? Icons.hourglass_empty
-                                  : Icons.mic_none,
-                          size: 48,
-                          color: Colors.white,
+                    return GestureDetector(
+                      onTap: _isCallActive ? _stopListening : _startListening,
+                      child: Container(
+                        width: 120,
+                        height: 120,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _isCallActive
+                              ? app_colors.secondary.withOpacity(0.8)
+                              : app_colors.secondary,
+                          boxShadow: _isCallActive
+                              ? [
+                                  BoxShadow(
+                                    color:
+                                        app_colors.secondary.withOpacity(0.4),
+                                    blurRadius: 20 * _pulseAnimation.value,
+                                    spreadRadius: 5 * _pulseAnimation.value,
+                                  ),
+                                ]
+                              : [
+                                  BoxShadow(
+                                    color:
+                                        app_colors.secondary.withOpacity(0.3),
+                                    blurRadius: 15,
+                                    offset: const Offset(0, 5),
+                                  ),
+                                ],
+                        ),
+                        child: Transform.scale(
+                          scale: _isCallActive ? _pulseAnimation.value : 1.0,
+                          child: Icon(
+                            _isCallActive
+                                ? Icons.mic
+                                : _isProcessing
+                                    ? Icons.hourglass_empty
+                                    : Icons.mic_none,
+                            size: 48,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     );
@@ -1078,9 +1342,9 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
                 const SizedBox(height: 16),
 
                 Text(
-                  _isListening
+                  _isCallActive
                       ? 'Listening... Speak commands naturally'
-                      : 'Initializing hands-free inspection',
+                      : 'Tap the microphone to start voice assistant',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.7),
@@ -1163,7 +1427,6 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     final completed =
         _currentInspectionItems.where((item) => item.isCompleted).length;
     final total = _currentInspectionItems.length;
-    final progress = total > 0 ? completed / total : 0.0;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
