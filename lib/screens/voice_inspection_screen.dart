@@ -185,12 +185,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   void initState() {
     super.initState();
 
-    // Fetch user data to determine user type
-    _fetchUserData();
-
-    // Initialize Vapi client
-    _initializeVapiClient();
-
+    // Initialize animation controllers
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
@@ -216,6 +211,29 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
       parent: _waveController,
       curve: Curves.easeInOut,
     ));
+
+    // Fetch user data to determine user type
+    _fetchUserData();
+
+    // Initialize Vapi client
+    _initializeVapiClient();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Start the voice inspection automatically after the widget is built
+    // We use a post-frame callback to ensure the widget is fully built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Add a small delay to ensure everything is initialized
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (!_isCallActive &&
+            _vapiClient != null &&
+            _currentInspectionItems.isNotEmpty) {
+          _startListening();
+        }
+      });
+    });
   }
 
   Future<void> _fetchUserData() async {
@@ -509,8 +527,6 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
             ? 'Ready to listen. Say commands for ${_userType!.toLowerCase()} inspection'
             : 'Ready to listen. Say inspection commands';
       });
-
-      // Don't start the call automatically here, let the user start it when needed
     } catch (e) {
       setState(() {
         _lastRecognizedText = 'Error initializing voice assistant: $e';
@@ -651,13 +667,20 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
   void _handleMessage(VapiEvent event) {
     // Process messages from Vapi
     try {
+      debugPrint('Handling Vapi message: ${event.value}');
+
       if (event.value is Map<String, dynamic>) {
         final message = event.value as Map<String, dynamic>;
+        debugPrint('Message type: ${message['type']}');
 
         // Handle transcript messages (user speech)
         if (message['type'] == 'transcript') {
-          final transcript = message['content'] as String?;
-          if (transcript != null && transcript.isNotEmpty) {
+          final transcript = message['transcript'] as String?;
+          final role = message['role'] as String?;
+
+          // Only process user transcripts, not assistant transcripts
+          if (transcript != null && transcript.isNotEmpty && role == 'user') {
+            debugPrint('User transcript received: $transcript');
             setState(() {
               _currentCommand = transcript;
               _lastRecognizedText = 'Recognized: "$_currentCommand"';
@@ -670,8 +693,8 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
 
         // Handle conversation update messages (assistant speech)
         if (message['type'] == 'conversation-update') {
-          final conversation = message['conversation'] as Map<String, dynamic>?;
-          if (conversation != null) {
+          final conversation = message['conversation'];
+          if (conversation is Map<String, dynamic>) {
             final messages = conversation['messages'] as List?;
             if (messages != null && messages.isNotEmpty) {
               // Check if the last message is a Map before casting
@@ -680,12 +703,41 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
                 if (lastMessage['role'] == 'assistant') {
                   final content = lastMessage['content'] as String?;
                   if (content != null && content.isNotEmpty) {
+                    debugPrint('Assistant message: $content');
                     setState(() {
                       _lastRecognizedText = 'Assistant: $content';
                     });
 
-                    // Update current task based on the assistant's message
-                    _updateCurrentTaskFromMessage(content);
+                    // Update the current task index based on the assistant's message
+                    _updateCurrentTaskIndexFromMessage(content);
+
+                    // If the assistant says "task completed", mark the current task as completed
+                    if (content.contains('task completed') ||
+                        content.contains('Task completed')) {
+                      if (_currentTaskIndex < _currentInspectionItems.length) {
+                        final currentItem =
+                            _currentInspectionItems[_currentTaskIndex];
+                        if (!currentItem.isCompleted) {
+                          _markTaskCompleted(currentItem);
+                          debugPrint(
+                              'Task marked as completed from assistant message: ${currentItem.title}');
+                        }
+                      }
+                    }
+
+                    // If the assistant says "issue noted", mark the current task as having an issue
+                    if (content.contains('issue noted') ||
+                        content.contains('Issue noted')) {
+                      if (_currentTaskIndex < _currentInspectionItems.length) {
+                        final currentItem =
+                            _currentInspectionItems[_currentTaskIndex];
+                        if (!currentItem.hasWarning) {
+                          _markTaskWithIssue(currentItem);
+                          debugPrint(
+                              'Task marked with issue from assistant message: ${currentItem.title}');
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -696,7 +748,6 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
     } catch (e) {
       debugPrint('Error processing Vapi message: $e');
     }
-    debugPrint('Vapi message: ${event.value}');
   }
 
   Future<void> _startVapiCall() async {
@@ -713,7 +764,7 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         assistantId: VAPI_ASSISTANT_ID,
         assistantOverrides: {
           'firstMessage':
-              'Beginning aircraft inspection for ${widget.aircraftModel}. I will guide you through each inspection item. Please respond with "done" when you complete an item or "problem" if you find an issue. Let\'s start with the first item: ${_currentInspectionItems.isNotEmpty ? _currentInspectionItems[0].title : "No tasks available"}.',
+              'Beginning aircraft inspection for ${widget.aircraftModel}. I will guide you through each inspection item. Please respond with "done" when you complete an item or "problem" if you find an issue. Let\'s start with the first item: ${_currentInspectionItems.isNotEmpty ? _currentInspectionItems[0].title : "Fuel Tank Quality"}.',
           'name': 'Aircraft Inspection Assistant',
           'model': {
             'model': 'gpt-4o',
@@ -850,17 +901,25 @@ Keep your responses concise and focused on the inspection process.
     if (_isCommandProcessed) return;
 
     final lowerCommand = command.toLowerCase().trim();
+    debugPrint('Processing command: $command');
 
     // Handle specific commands for task completion
     if (_currentTaskIndex < _currentInspectionItems.length) {
       final currentItem = _currentInspectionItems[_currentTaskIndex];
+      debugPrint(
+          'Current task: ${currentItem.title} (index: $_currentTaskIndex)');
 
       // Check for completion commands
       if (lowerCommand.contains('done') ||
           lowerCommand.contains('completed') ||
           lowerCommand.contains('complete')) {
-        _markCommandProcessed();
+        // Only mark the current task as completed
         _markTaskCompleted(currentItem);
+
+        // Mark the command as processed after marking the task
+        _markCommandProcessed();
+
+        debugPrint('Task marked as completed: ${currentItem.title}');
         return;
       }
 
@@ -869,8 +928,13 @@ Keep your responses concise and focused on the inspection process.
           lowerCommand.contains('problem') ||
           lowerCommand.contains('issue') ||
           lowerCommand.contains('not complete')) {
-        _markCommandProcessed();
+        // Only mark the current task as having an issue
         _markTaskWithIssue(currentItem);
+
+        // Mark the command as processed after marking the task
+        _markCommandProcessed();
+
+        debugPrint('Task marked with issue: ${currentItem.title}');
         return;
       }
     }
@@ -885,8 +949,17 @@ Keep your responses concise and focused on the inspection process.
   }
 
   void _markCommandProcessed() {
+    debugPrint('Marking command as processed');
     _isCommandProcessed = true;
     // Don't stop listening here since Vapi will handle the continuous conversation
+
+    // Reset the command processed flag after a shorter delay to allow processing of new commands
+    Future.delayed(const Duration(milliseconds: 500), () {
+      setState(() {
+        _isCommandProcessed = false;
+        debugPrint('Command processed flag reset');
+      });
+    });
   }
 
   void _markTaskCompleted(InspectionItem item) {
@@ -899,6 +972,10 @@ Keep your responses concise and focused on the inspection process.
     _lastRecognizedText = 'Task completed: ${item.title}';
 
     // Vapi will handle the conversation flow, so we don't need to move to the next task here
+    debugPrint('Task marked as completed: ${item.title}');
+
+    // Force a UI update to ensure the task list is refreshed
+    setState(() {});
   }
 
   void _markTaskWithIssue(InspectionItem item) {
@@ -911,9 +988,49 @@ Keep your responses concise and focused on the inspection process.
     _lastRecognizedText = 'Task has issue: ${item.title}';
 
     // Vapi will handle the conversation flow, so we don't need to move to the next task here
+    debugPrint('Task marked with issue: ${item.title}');
+
+    // Force a UI update to ensure the task list is refreshed
+    setState(() {});
   }
 
   void _updateCurrentTaskFromMessage(String message) {
+    debugPrint('Updating current task from message: $message');
+
+    // Check if the message indicates task completion
+    if (message.contains('task completed') ||
+        message.contains('Task completed')) {
+      // Mark the current task as completed
+      if (_currentTaskIndex < _currentInspectionItems.length) {
+        final currentItem = _currentInspectionItems[_currentTaskIndex];
+        if (!currentItem.isCompleted) {
+          setState(() {
+            currentItem.isCompleted = true;
+            currentItem.completedAt = DateTime.now();
+            currentItem.hasWarning = false;
+            debugPrint(
+                'Current task marked as completed: ${currentItem.title}');
+          });
+        }
+      }
+    }
+
+    // Check if the message indicates a task issue
+    if (message.contains('issue noted') || message.contains('Issue noted')) {
+      // Mark the current task as having an issue
+      if (_currentTaskIndex < _currentInspectionItems.length) {
+        final currentItem = _currentInspectionItems[_currentTaskIndex];
+        if (!currentItem.hasWarning) {
+          setState(() {
+            currentItem.isCompleted = false;
+            currentItem.hasWarning = true;
+            currentItem.warningAt = DateTime.now();
+            debugPrint('Current task marked with issue: ${currentItem.title}');
+          });
+        }
+      }
+    }
+
     // Try to find which task is being mentioned in the message
     for (int i = 0; i < _currentInspectionItems.length; i++) {
       final item = _currentInspectionItems[i];
@@ -922,6 +1039,8 @@ Keep your responses concise and focused on the inspection process.
         if (_currentTaskIndex != i) {
           setState(() {
             _currentTaskIndex = i;
+            debugPrint(
+                'Current task index updated to: $_currentTaskIndex (${item.title})');
           });
         }
         return;
@@ -929,11 +1048,50 @@ Keep your responses concise and focused on the inspection process.
     }
 
     // If no specific task is found, look for keywords like "next item" or "task completed"
-    if (message.contains('next item') || message.contains('task completed')) {
+    if (message.contains('next item') || message.contains('Next item')) {
       // Move to the next task if not at the end
       if (_currentTaskIndex < _currentInspectionItems.length - 1) {
         setState(() {
           _currentTaskIndex++;
+          debugPrint(
+              'Current task index incremented to: $_currentTaskIndex (${_currentInspectionItems[_currentTaskIndex].title})');
+        });
+      }
+    }
+
+    // Force a UI update to ensure the task list is refreshed
+    setState(() {});
+  }
+
+  // Update only the current task index based on the assistant's message
+  // Don't mark tasks as completed or with issues based on assistant messages
+  void _updateCurrentTaskIndexFromMessage(String message) {
+    debugPrint('Updating current task index from message: $message');
+
+    // Try to find which task is being mentioned in the message
+    for (int i = 0; i < _currentInspectionItems.length; i++) {
+      final item = _currentInspectionItems[i];
+      if (message.contains(item.title)) {
+        // Update the current task index
+        if (_currentTaskIndex != i) {
+          setState(() {
+            _currentTaskIndex = i;
+            debugPrint(
+                'Current task index updated to: $_currentTaskIndex (${item.title})');
+          });
+        }
+        return;
+      }
+    }
+
+    // If no specific task is found, look for keywords like "next item"
+    if (message.contains('next item') || message.contains('Next item')) {
+      // Move to the next task if not at the end
+      if (_currentTaskIndex < _currentInspectionItems.length - 1) {
+        setState(() {
+          _currentTaskIndex++;
+          debugPrint(
+              'Current task index incremented to: $_currentTaskIndex (${_currentInspectionItems[_currentTaskIndex].title})');
         });
       }
     }
@@ -1090,7 +1248,7 @@ Keep your responses concise and focused on the inspection process.
                       children: [
                         _buildVoiceInterface(),
                         const SizedBox(height: 32),
-                        _buildInspectionChecklist(),
+                        // _buildInspectionChecklist(),
                       ],
                     ),
                   ),
@@ -1344,7 +1502,7 @@ Keep your responses concise and focused on the inspection process.
                 Text(
                   _isCallActive
                       ? 'Listening... Speak commands naturally'
-                      : 'Tap the microphone to start voice assistant',
+                      : 'Voice assistant starting automatically...',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.7),
