@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:skycypher/screens/simplified_voice_inspection_screen.dart';
+
 import 'package:skycypher/utils/colors.dart' as app_colors;
 import 'package:skycypher/screens/voice_inspection_screen.dart';
 import 'package:skycypher/models/aircraft.dart';
