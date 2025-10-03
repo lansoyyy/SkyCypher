@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:intl/intl.dart';
 import 'package:skycypher/models/maintenance_log.dart';
 import 'package:skycypher/services/maintenance_log_service.dart';
+import 'package:skycypher/services/pdf_service.dart';
 
 class MaintenanceLogScreen extends StatefulWidget {
   const MaintenanceLogScreen({super.key});
@@ -76,6 +77,11 @@ class _MaintenanceLogScreenState extends State<MaintenanceLogScreen> {
                           ),
                         ),
                       ),
+                      _CircleButton(
+                        icon: Icons.picture_as_pdf,
+                        onTap: () => _exportToPdf(context),
+                      ),
+                      const SizedBox(width: 10),
                       _CircleButton(
                         icon: Icons.add,
                         onTap: () => _showAddLogDialog(context),
@@ -554,6 +560,72 @@ class _MaintenanceLogScreenState extends State<MaintenanceLogScreen> {
         );
       },
     );
+  }
+
+  void _exportToPdf(BuildContext context) async {
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+          ),
+        ),
+      );
+
+      // Get all maintenance logs
+      final QuerySnapshot snapshot =
+          await FirebaseFirestore.instance.collection('maintenance_logs').get();
+
+      final List<MaintenanceLog> logs = snapshot.docs
+          .map((doc) => MaintenanceLog.fromDocument(
+              doc.data() as Map<String, dynamic>, doc.id))
+          .toList();
+
+      // Close loading indicator
+      Navigator.of(context).pop();
+
+      if (logs.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('No maintenance logs to export.'),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Generate and open PDF
+      await PdfService.generateMaintenanceLogPdf(logs);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Maintenance log exported successfully.'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: app_colors.secondary,
+          ),
+        );
+      }
+    } catch (e) {
+      // Close loading indicator if it's still showing
+      Navigator.of(context).pop();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exporting maintenance log: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
 

@@ -5,6 +5,7 @@ import 'package:skycypher/utils/colors.dart' as app_colors;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:skycypher/services/auth_service.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:skycypher/services/pdf_service.dart';
 
 class VoiceInspectionScreen extends StatefulWidget {
   final String aircraftModel;
@@ -902,6 +903,27 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
                 ),
               ),
               const Spacer(),
+              // Export to PDF button
+              GestureDetector(
+                onTap: () => _exportToPdf(context),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.2),
+                      width: 1,
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.picture_as_pdf,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
               // Refresh button for speech-to-text
               GestureDetector(
                 onTap: () {
@@ -1347,6 +1369,56 @@ class _VoiceInspectionScreenState extends State<VoiceInspectionScreen>
         ],
       ),
     );
+  }
+
+  void _exportToPdf(BuildContext context) async {
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+          ),
+        ),
+      );
+
+      // Generate the inspection report PDF
+      await PdfService.generateInspectionReportPdf(
+        aircraftModel: widget.aircraftModel,
+        rpNumber: widget.rpNumber,
+        userType: _userType,
+        mechanicCategory: _mechanicCategory,
+        inspectionItems: _currentInspectionItems,
+      );
+
+      // Close loading indicator
+      Navigator.of(context).pop();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Inspection report exported successfully.'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: app_colors.secondary,
+          ),
+        );
+      }
+    } catch (e) {
+      // Close loading indicator if it's still showing
+      Navigator.of(context).pop();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exporting inspection report: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
 
